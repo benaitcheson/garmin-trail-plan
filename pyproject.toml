@@ -1,0 +1,19 @@
+[project]
+name = "trailplan"
+version = "0.1.0"
+description = "Adaptive trail running plan that syncs scheduled workouts to a Garmin watch"
+requires-python = ">=3.12"
+dependencies = [
+    "garminconnect>=0.3.18",
+    "pydantic>=2",
+]
+
+[project.scripts]
+trailplan = "trailplan.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

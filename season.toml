@@ -1,0 +1,36 @@
+# Your season. Edit this, then run `uv run trailplan plan` to rebuild the plan.
+
+[athlete]
+# Leave weekly_hours / long_run_min commented out to auto-detect them from your
+# last 4-6 weeks of Garmin activities when you run `trailplan plan`.
+# weekly_hours = 5.0     # typical running hours per week right now
+# long_run_min = 120     # longest run in the last month, in minutes
+days_per_week = 5        # 3-6 running days
+long_run_day = "sat"     # back-to-back runs (ultra builds) go the day after
+strength = true          # adds a trail strength session (1-2x/week)
+hr_targets = true        # false = no heart-rate zone alerts on the watch
+easy_pace = "6:30"       # easy pace on flat ground (min/km) - used to estimate race durations
+
+# priority: "A" = goal race (full taper), "B" = training race inside a bigger build (short taper)
+# goal_time (optional) overrides the estimated race duration, e.g. goal_time = "8:30"
+
+[[race]]
+name = "UTA 50"
+date = 2027-05-15
+distance_km = 51
+elevation_m = 2400
+priority = "B"
+
+[[race]]
+name = "Guzzler 100"
+date = 2027-07-17        # ESTIMATE - 2027 date not yet published (2026 was 18 Jul)
+distance_km = 100
+elevation_m = 4618
+priority = "A"
+
+[[race]]
+name = "Cradle Mountain Run"
+date = 2028-02-05        # ESTIMATE - usually the first Saturday in February
+distance_km = 80
+elevation_m = 2000       # ESTIMATE - confirm from the race information pack
+priority = "A"
