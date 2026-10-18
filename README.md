@@ -45,6 +45,16 @@ Sleep and readiness only reach Garmin Connect after your watch syncs with the ph
 
 Add a race with `type = "road"` and the plan switches to road training for that block. Sessions are 5k-pace intervals by distance, threshold cruise intervals, long runs finishing at marathon pace, and a 5k time trial (parkrun works well). There are no back-to-backs or climbing targets, and long runs are capped at 3h. Road sessions use **pace targets**, worked out each time a workout is sent to the watch from Garmin's latest race predictions. As your predictions improve, your paces get faster too. If you've set a marathon `goal_time`, marathon pace uses whichever is faster: that goal or the prediction. Every sync reads your 5k, 10k, half and marathon PBs from Garmin, tells you when you set a new one, and the dashboard shows PBs against predictions. Short races (under 90 min) don't trigger recovery weeks or reset your fitness. For goals under an hour, use `H:MM:SS`, e.g. `goal_time = "0:44:00"`.
 
+## Race-day pacing workouts
+
+```bash
+uv run road-race 5km --goal 19:55                       # today, 1 km steps
+uv run road-race marathon --goal 3:50 --date 2027-10-10 # 5 km steps, gel reminders every ~30 min
+uv run road-race half --goal 1:42 --window 2 --dry-run  # tighter pace window; preview only
+```
+
+This sends an even-paced workout to your Garmin calendar. Each step ends at a distance and has a pace window (±3% by default), so the watch beeps if you drift too fast or too slow. The step note tells you when you should reach the end of the chunk, plus gel reminders in races over an hour. Goals: `19:55` is minutes:seconds, `1:45` for a half or marathon is hours:minutes, and `H:MM:SS` always works. Running the command again for the same date and distance replaces the earlier workout, and the daily sync leaves these alone. On race day, start a Run and pick **Do Workout**. Try one at a parkrun first.
+
 ## On the watch
 
 Workouts are named `TP …` and appear in the Garmin Connect calendar and on the watch, under the day's scheduled workout and Training → Workouts. Start them from the **Trail Run** activity so you get trail-run data. Targets are your watch's **heart-rate zones**, so set those up properly. Lactate-threshold-based zones work best (Enduro 3 can detect your threshold with a chest strap). Set `hr_targets = false` in `season.toml` if you'd rather not get zone alerts.

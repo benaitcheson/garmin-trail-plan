@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 
 TOKENSTORE = os.environ.get("GARMINTOKENS", "~/.garminconnect")
 NAME_PREFIX = "TP "
+MANUAL_PREFIX = "manual:"  # store.garmin keys for workouts pushed by hand, e.g. road-race
 WINDOW_DAYS = 7  # how many days ahead to keep on the watch
 KEEP_PAST_DAYS = 7  # delete our workout templates once this old
 
@@ -73,7 +74,8 @@ def connect() -> Garmin:
 # ---------------------------------------------------------------- workouts
 
 def to_payload(
-    s: Session, hr_targets: bool = True, fuel_every_min: int = 0, paces: dict[str, float] | None = None
+    s: Session, hr_targets: bool = True, fuel_every_min: int = 0, paces: dict[str, float] | None = None,
+    pace_tolerance: float = PACE_TOLERANCE,
 ) -> dict[str, Any]:
     name = (NAME_PREFIX + s.title)[:60]
     description = s.description + (f" [Adjusted: {s.adjusted}]" if s.adjusted else "")
@@ -105,17 +107,19 @@ def to_payload(
         workout = RunningWorkout(
             workoutName=name, description=description, estimatedDurationInSecs=s.minutes * 60,
             workoutSegments=[WorkoutSegment(
-                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(run_steps, counter, hr_targets, paces or {}))],
+                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(run_steps, counter, hr_targets, paces or {}, pace_tolerance))],
         )
     return workout.to_dict()
 
 
-def _steps(steps: list[Step], counter, hr_targets: bool, paces: dict[str, float]) -> list:
+def _steps(
+    steps: list[Step], counter, hr_targets: bool, paces: dict[str, float], tolerance: float = PACE_TOLERANCE
+) -> list:
     out = []
     for st in steps:
         order = next(counter)
         if st.kind == "repeat":
-            out.append(create_repeat_group(st.reps, _steps(st.steps, counter, hr_targets, paces), order))
+            out.append(create_repeat_group(st.reps, _steps(st.steps, counter, hr_targets, paces, tolerance), order))
             continue
         if st.meters is not None:
             end, end_value = END_DISTANCE, st.meters
@@ -129,8 +133,8 @@ def _steps(steps: list[Step], counter, hr_targets: bool, paces: dict[str, float]
             # Garmin pace targets are speeds in m/s; the slower pace is the lower value.
             target = dict(
                 targetType=PACE_ZONE,
-                targetValueOne=1000 / (secs_per_km * (1 + PACE_TOLERANCE)),
-                targetValueTwo=1000 / (secs_per_km * (1 - PACE_TOLERANCE)),
+                targetValueOne=1000 / (secs_per_km * (1 + tolerance)),
+                targetValueTwo=1000 / (secs_per_km * (1 - tolerance)),
             )
         elif hr_targets and st.zone is not None:
             target = dict(targetType=HR_ZONE, zoneNumber=st.zone)
@@ -227,6 +231,12 @@ def push_window(
 
     for sid, rec in list(store.garmin.items()):
         rec_date = date.fromisoformat(rec["date"])
+        if sid.startswith(MANUAL_PREFIX):
+            # Workouts pushed by hand (race pacing) aren't part of the plan: only tidy up old ones.
+            if rec_date < today - timedelta(days=KEEP_PAST_DAYS) and not dry_run:
+                _remove_uploaded(g, rec)
+                del store.garmin[sid]
+            continue
         stale_future = rec_date >= today and (sid not in wanted or version(wanted[sid]) != rec["hash"])
         too_old = rec_date < today - timedelta(days=KEEP_PAST_DAYS)
         if stale_future or too_old:
@@ -263,6 +273,24 @@ def _all_steps(steps: list[Step], n: int = 1) -> list[tuple[Step, int]]:
     for st in steps:
         out += _all_steps(st.steps, n * st.reps) if st.kind == "repeat" else [(st, n)]
     return out
+
+
+def push_manual(g: Garmin, store: Store, key: str, s: Session, paces: dict[str, float], tolerance: float) -> dict:
+    """Upload and schedule a one-off workout, replacing an earlier one with the same key."""
+    sid = MANUAL_PREFIX + key
+    if sid in store.garmin:
+        _remove_uploaded(g, store.garmin.pop(sid))
+    resp = g.upload_workout(to_payload(s, hr_targets=False, paces=paces, pace_tolerance=tolerance))
+    sched = g.schedule_workout(resp["workoutId"], s.date.isoformat()) or {}
+    store.garmin[sid] = {
+        "workout_id": resp["workoutId"],
+        "schedule_id": sched.get("workoutScheduleId") or sched.get("id"),
+        "hash": s.content_hash(),
+        "date": s.date.isoformat(),
+        "name": s.title,
+    }
+    store.save()
+    return store.garmin[sid]
 
 
 def remove_all(g: Garmin, store: Store, by_name: bool) -> int:

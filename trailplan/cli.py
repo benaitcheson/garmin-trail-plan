@@ -50,6 +50,7 @@ def main() -> None:
     sp = sub.add_parser("race-plan", help="Race-day splits, cutoff buffers and fuel plan")
     sp.add_argument("race", nargs="?", help="race name (default: next race)")
     sp.add_argument("--goal", help="goal time H:MM (default: season.toml goal_time or estimate)")
+    _road_race_args(sub.add_parser("road-race", help="Push a race-pacing workout to the watch, e.g. road-race 5km --goal 19:55"))
     sp = sub.add_parser("dashboard", help="Build the progress dashboard (dashboard.html) and open it")
     sp.add_argument("--no-open", action="store_true", help="just write the file")
     sp = sub.add_parser("install-schedule", help="Run sync automatically every morning (macOS)")
@@ -67,6 +68,7 @@ def main() -> None:
             "plan": cmd_plan, "show": cmd_show, "sync": cmd_sync, "login": cmd_login,
             "install-schedule": cmd_install, "uninstall-schedule": cmd_uninstall,
             "reset": cmd_reset, "debug": cmd_debug, "dashboard": cmd_dashboard, "race-plan": cmd_race_plan,
+            "road-race": cmd_road_race,
         }[args.cmd](args)
     except (ConfigError, ValueError) as e:
         sys.exit(f"Error: {e}")
@@ -202,6 +204,47 @@ def cmd_sync(args) -> None:
     headline = run.title if run else "Rest day"
     detail = (run.adjusted if run and run.adjusted else wellness.summary())
     _notify(args, f"Today: {headline}", detail)
+
+
+def _road_race_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    p.add_argument("distance", help="5km, 10k, half, marathon, or a number of km")
+    p.add_argument("--goal", required=True, help="goal time: 19:55, 44:30, 1:45 (half/marathon H:MM) or 1:45:30")
+    p.add_argument("--date", type=date.fromisoformat, default=date.today(), help="race day YYYY-MM-DD (default today)")
+    p.add_argument("--split", type=float, help="km per step (default 1 km up to 10k, 5 km beyond)")
+    p.add_argument("--window", type=float, default=3.0, help="pace window either side of goal pace, %% (default 3)")
+    p.add_argument("--dry-run", action="store_true", help="show the splits, don't send anything")
+    return p
+
+
+def road_race_main() -> None:
+    """Entry point for the short `road-race` command."""
+    p = _road_race_args(argparse.ArgumentParser(prog="road-race", description="Push a race-pacing workout to your watch"))
+    p.add_argument("--state", type=Path, default=ROOT / "state.json")
+    try:
+        cmd_road_race(p.parse_args())
+    except ValueError as e:
+        sys.exit(f"Error: {e}")
+
+
+def cmd_road_race(args) -> None:
+    from .roadrace import build_race_workout, parse_distance, parse_goal, splits_table
+
+    km = parse_distance(args.distance)
+    goal = parse_goal(args.goal, km)
+    s = build_race_workout(km, goal, args.date, args.split)
+    print(splits_table(s, goal, km))
+    from .roadrace import fmt_pace
+
+    print(f"\nPace window: +/-{args.window:g}% around {fmt_pace(goal / km)}/km. The watch beeps if you drift outside it.")
+    if args.dry_run:
+        print("[dry run] Nothing sent.")
+        return
+    from .garmin import push_manual
+
+    store = Store.load(args.state)
+    push_manual(_connect(), store, f"race:{args.date.isoformat()}:{km:g}", s, {"race": goal / km}, args.window / 100)
+    print(f"\nSent to your Garmin calendar for {args.date:%a %d %b} as \"TP {s.title}\". Sync your watch, then on race day:")
+    print("  start Run, choose Do Workout (or Run > menu > Training > Training Calendar).")
 
 
 PB_NAMES = {"5k": "5 km", "10k": "10 km", "hm": "half marathon", "m": "marathon"}

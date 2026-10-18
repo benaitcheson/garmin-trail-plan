@@ -300,3 +300,42 @@ def test_new_pb_detected():
     new = {"prs": {"5k": {"secs": 1225, "date": "2027-08-21"}}}
     assert _new_pbs(FITNESS, new) == ["New 5 km PB: 20:25 (was 20:51). Nice work!"]
     assert _new_pbs(FITNESS, FITNESS) == []
+
+
+def test_road_race_goal_and_distance_parsing():
+    from trailplan.roadrace import parse_distance, parse_goal
+    assert parse_distance("5km") == 5 and parse_distance("10k") == 10 and parse_distance("half") == 21.0975
+    assert parse_distance("marathon") == 42.195 and parse_distance("8") == 8
+    assert parse_goal("19:55", 5) == 1195
+    assert parse_goal("44:30", 10) == 2670
+    assert parse_goal("1:45", 21.0975) == 6300 and parse_goal("3:50", 42.195) == 13800
+    assert parse_goal("95:00", 21.0975) == 5700 and parse_goal("1:45:30", 21.0975) == 6330
+    with pytest.raises(ValueError):
+        parse_goal("9:55", 5)  # 1:59/km - a typo, not a goal
+    with pytest.raises(ValueError):
+        parse_distance("parkrun")
+
+
+def test_road_race_workout_adds_up():
+    from trailplan.roadrace import build_race_workout
+    s = build_race_workout(5, 1195, MON)
+    assert [st.meters for st in s.steps] == [1000] * 5
+    assert abs(sum(st.est_seconds() for st in s.steps) - 1195) < 1
+    m = build_race_workout(42.195, 13800, MON)
+    assert sum(st.meters for st in m.steps) == 42195 and len(m.steps) == 9
+    assert sum("Gel" in st.note for st in m.steps) == 7
+    assert not any("Gel" in st.note for st in s.steps)
+    payload = to_payload(m, hr_targets=False, paces={"race": 13800 / 42.195}, pace_tolerance=0.03)
+    step = payload["workoutSegments"][0]["workoutSteps"][0]
+    assert step["endCondition"]["conditionTypeKey"] == "distance" and step["endConditionValue"] == 5000
+    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone" and "5:27/km" in step["description"]
+
+
+def test_sync_leaves_manual_race_workouts_alone(tmp_path):
+    from trailplan.config import Athlete
+    from trailplan.garmin import push_window
+    store = make_store(tmp_path)
+    store.garmin["manual:race:2026-10-25:5"] = {"workout_id": 1, "schedule_id": 2, "hash": "x",
+                                                "date": "2026-10-25", "name": "RACE 5k 19:55"}
+    msgs = push_window(None, store, date(2026, 10, 20), Athlete(), dry_run=True)
+    assert "manual:race:2026-10-25:5" in store.garmin and not any("Removing" in m for m in msgs)
