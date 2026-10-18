@@ -21,8 +21,10 @@ from garminconnect.workout import (
 )
 
 from .adapt import Activity, Wellness
+from .config import Athlete
 from .model import Session, Step
 from .store import Store
+from .workouts import FUEL_KINDS, add_fuel
 
 log = logging.getLogger(__name__)
 
@@ -63,9 +65,13 @@ def connect() -> Garmin:
 
 # ---------------------------------------------------------------- workouts
 
-def to_payload(s: Session, hr_targets: bool = True) -> dict[str, Any]:
+def to_payload(s: Session, hr_targets: bool = True, fuel_every_min: int = 0) -> dict[str, Any]:
     name = (NAME_PREFIX + s.title)[:60]
     description = s.description + (f" [Adjusted: {s.adjusted}]" if s.adjusted else "")
+    run_steps = s.steps
+    if s.kind in FUEL_KINDS and fuel_every_min > 0:
+        run_steps = add_fuel(s.steps, fuel_every_min)
+        description += f" Watch prompts you to fuel every {fuel_every_min} min." 
     if s.kind == "strength":
         order, steps = 1, []
         for ex in s.exercises:
@@ -90,7 +96,7 @@ def to_payload(s: Session, hr_targets: bool = True) -> dict[str, Any]:
         workout = RunningWorkout(
             workoutName=name, description=description, estimatedDurationInSecs=s.minutes * 60,
             workoutSegments=[WorkoutSegment(
-                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(s.steps, counter, hr_targets))],
+                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(run_steps, counter, hr_targets))],
         )
     return workout.to_dict()
 
@@ -127,15 +133,20 @@ def _remove_uploaded(g: Garmin, rec: dict) -> None:
         log.debug("delete %s: %s", rec["workout_id"], e)
 
 
-def push_window(g: Garmin | None, store: Store, today: date, hr_targets: bool, dry_run: bool) -> list[str]:
+def push_window(g: Garmin | None, store: Store, today: date, athlete: Athlete, dry_run: bool) -> list[str]:
     """Make Garmin's calendar match the plan for the next WINDOW_DAYS days."""
     msgs = []
+
+    def version(s: Session) -> str:
+        # Watch-side settings change the uploaded workout too, so they're part of its version.
+        return f"{s.content_hash()}:hr{int(athlete.hr_targets)}:fuel{athlete.fuel_every_min}"
+
     end = today + timedelta(days=WINDOW_DAYS - 1)
     wanted = {s.id: s for s in store.between(today, end) if s.uploadable}
 
     for sid, rec in list(store.garmin.items()):
         rec_date = date.fromisoformat(rec["date"])
-        stale_future = rec_date >= today and (sid not in wanted or wanted[sid].content_hash() != rec["hash"])
+        stale_future = rec_date >= today and (sid not in wanted or version(wanted[sid]) != rec["hash"])
         too_old = rec_date < today - timedelta(days=KEEP_PAST_DAYS)
         if stale_future or too_old:
             if stale_future:
@@ -146,18 +157,18 @@ def push_window(g: Garmin | None, store: Store, today: date, hr_targets: bool, d
 
     for sid, s in wanted.items():
         rec = store.garmin.get(sid)
-        if rec and rec["hash"] == s.content_hash():
+        if rec and rec["hash"] == version(s):
             continue
         msgs.append(f"Sending to watch: {s.date:%a %d %b}  {s.title}")
         if dry_run:
             continue
-        resp = g.upload_workout(to_payload(s, hr_targets))
+        resp = g.upload_workout(to_payload(s, athlete.hr_targets, athlete.fuel_every_min))
         workout_id = resp["workoutId"]
         sched = g.schedule_workout(workout_id, s.date.isoformat()) or {}
         store.garmin[sid] = {
             "workout_id": workout_id,
             "schedule_id": sched.get("workoutScheduleId") or sched.get("id"),
-            "hash": s.content_hash(),
+            "hash": version(s),
             "date": s.date.isoformat(),
             "name": s.title,
         }

@@ -2,6 +2,7 @@
 name = "trailplan"
 version = "0.1.0"
 description = "Adaptive trail running plan that syncs scheduled workouts to a Garmin watch"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "garminconnect>=0.3.18",

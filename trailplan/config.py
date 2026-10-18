@@ -56,6 +56,7 @@ class Athlete:
     long_day: int = 5
     strength: bool = True
     hr_targets: bool = True
+    fuel_every_min: int = 30
     easy_pace_s: int = 390
 
 
@@ -84,6 +85,7 @@ def load_config(path: Path) -> Config:
         long_day=DAYS.index(long_day),
         strength=bool(a.get("strength", True)),
         hr_targets=bool(a.get("hr_targets", True)),
+        fuel_every_min=int(a.get("fuel_every_min", 30)),
         easy_pace_s=pace,
     )
     races = []

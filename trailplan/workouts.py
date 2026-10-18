@@ -6,6 +6,7 @@ means little on trails. Zones come from the watch's own HR zone settings.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 from .model import Exercise, Session, Step, fmt_min
@@ -14,6 +15,44 @@ M = 60  # seconds per minute
 
 EASY_NOTE = "Conversational. Hike anything steep to stay in zone."
 FUEL_NOTE = "Practise race fuelling (~60-90 g carbs/hr) and carry race kit."
+
+
+FUEL_PREFIX = "FUEL: gel + drink. "
+FUEL_KINDS = {"long", "b2b"}
+MIN_PIECE = 5 * M  # never create a step shorter than this when inserting fuel prompts
+
+
+def add_fuel(steps: list[Step], every_min: int) -> list[Step]:
+    """Split timed steps so a new step starts every `every_min` minutes with a fuel note.
+
+    The watch beeps and shows the step note at each step change, which makes it
+    a fuelling reminder. Total duration and zones are unchanged.
+    """
+    if every_min <= 0:
+        return steps
+    every = every_min * M
+    out: list[Step] = []
+    elapsed, next_mark, pending = 0.0, float(every), False
+    for st in steps:
+        if st.kind == "repeat" or st.seconds is None:
+            out.append(st)
+            elapsed += st.est_seconds()
+            continue
+        start, end = elapsed, elapsed + st.seconds
+        note = FUEL_PREFIX + st.note if pending else st.note
+        pending, piece_start = False, start
+        while next_mark < end:
+            if next_mark - piece_start < MIN_PIECE:  # mark right at the start: prompt now
+                note = note if note.startswith(FUEL_PREFIX) else FUEL_PREFIX + note
+            elif end - next_mark < MIN_PIECE:  # mark right at the end: prompt on the next step
+                pending = True
+            else:
+                out.append(replace(st, seconds=next_mark - piece_start, note=note))
+                piece_start, note = next_mark, FUEL_PREFIX + st.note
+            next_mark += every
+        out.append(replace(st, seconds=end - piece_start, note=note))
+        elapsed = end
+    return out
 
 
 def r5(x: float) -> int:

@@ -9,6 +9,7 @@ days_per_week = 5        # 3-6 running days
 long_run_day = "sat"     # back-to-back runs (ultra builds) go the day after
 strength = true          # adds a trail strength session (1-2x/week)
 hr_targets = true        # false = no heart-rate zone alerts on the watch
+fuel_every_min = 30      # long runs beep "FUEL: gel + drink" this often (0 = off)
 easy_pace = "6:30"       # easy pace on flat ground (min/km) - used to estimate race durations
 
 # priority: "A" = goal race (full taper), "B" = training race inside a bigger build (short taper)

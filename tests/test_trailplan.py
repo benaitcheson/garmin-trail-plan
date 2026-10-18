@@ -126,3 +126,43 @@ def test_decision_locked_once_made(tmp_path):
     adapt_today(store, sat, LOW, trained_today=False)
     adapt_today(store, sat, LOW, trained_today=False)  # second run of the day must not shorten again
     assert store.run_on(sat).minutes == 180
+
+
+def _flat_steps(steps):
+    return [s for s in steps if s.kind != "repeat"]
+
+
+def test_fuel_prompts_every_30_min_without_changing_duration():
+    run = w.long_run(MON, 180)
+    fuelled = w.add_fuel(run.steps, 30)
+    assert sum(s.est_seconds() for s in fuelled) == sum(s.est_seconds() for s in run.steps)
+    # step boundaries (elapsed seconds) where a fuel note appears
+    marks, elapsed = [], 0
+    for s in fuelled:
+        if s.note.startswith(w.FUEL_PREFIX):
+            marks.append(elapsed / 60)
+        elapsed += s.est_seconds()
+    assert marks == [30, 60, 90, 120, 150]
+    assert all(s.zone == 2 for s in fuelled if s.kind == "run")
+
+
+def test_fuel_never_creates_tiny_steps():
+    for minutes in range(60, 331, 5):
+        for s in w.add_fuel(w.long_run(MON, minutes).steps, 30):
+            assert s.seconds is None or s.seconds >= w.MIN_PIECE
+
+
+def test_fuel_prompts_in_race_sim_and_payload():
+    sim = w.race_sim(MON, 240, 300, ultra=False)
+    payload = to_payload(sim, fuel_every_min=30)
+    notes = [st.get("description", "") for st in payload["workoutSegments"][0]["workoutSteps"]]
+    assert sum(n.startswith("FUEL") for n in notes) == 7  # 30..210 min
+    assert "fuel every 30 min" in payload["description"]
+    # easy runs and quality sessions are left alone
+    easy_payload = to_payload(w.easy(MON, 60), fuel_every_min=30)
+    assert not any("FUEL" in (st.get("description") or "") for st in easy_payload["workoutSegments"][0]["workoutSteps"])
+
+
+def test_fuel_off():
+    run = w.long_run(MON, 180)
+    assert w.add_fuel(run.steps, 0) == run.steps

@@ -166,7 +166,7 @@ def cmd_sync(args) -> None:
     trained_today = any(a.date == today and (a.is_run or a.is_strength) for a in acts)
     wellness = fetch_wellness(g, today)
     msgs += adapt_today(store, today, wellness, trained_today, force=args.force)
-    msgs += push_window(None if args.dry_run else g, store, today, cfg.athlete.hr_targets, args.dry_run)
+    msgs += push_window(None if args.dry_run else g, store, today, cfg.athlete, args.dry_run)
     if not args.dry_run:
         store.save()
 

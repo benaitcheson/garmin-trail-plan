@@ -41,6 +41,8 @@ Workouts are named `TP …` and appear in the Garmin Connect calendar and on the
 
 Hill repeats use the LAP button: press it at the bottom of the hill to start the next rep.
 
+**Fuel prompts:** long runs and back-to-backs are split into 30-minute steps. At each one the watch beeps and shows **FUEL: gel + drink**, so you practise race-day fuelling on every long run. Change the interval with `fuel_every_min` in `season.toml` (`0` turns it off). For races, which you won't run as a workout, set up the same reminders on the watch under Trail Run → settings → Alerts → Add New → **Custom**, recurring every 30 min (or every ~250 calories).
+
 ## Changing things
 
 Edit `season.toml` (race dates, days per week, long-run day, strength on/off), then `uv run trailplan plan`. Past days and their history are kept, and anything from today onward is rebuilt. `uv run trailplan reset` removes every workout this app put on Garmin.
@@ -52,3 +54,7 @@ Edit `season.toml` (race dates, days per week, long-run day, strength on/off), t
 - This uses Garmin Connect's **unofficial** API (the `garminconnect` library), not Garmin Coach. Garmin can change it without notice.
 - The plan comes from rules, not a coach. Treat it as a strong default and listen to your body, especially for niggles, which it can't see.
 - Race durations are estimated from distance + climbing (100 m up ≈ 1 km) and your easy pace. Set `goal_time` per race if you know better.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE).
