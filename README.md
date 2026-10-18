@@ -35,6 +35,12 @@ uv run trailplan install-schedule # run sync automatically at 06:30, 08:00, 10:0
 
 Sleep and readiness only reach Garmin Connect after your watch syncs with the phone app in the morning. The automatic sync runs three times, so a late sync is still picked up. If there's no data yet, it waits rather than guessing.
 
+## Dashboard, effort checks and race plans
+
+- `uv run trailplan dashboard` opens `dashboard.html`, which is rebuilt after every sync. It shows a countdown to the next race, this week's planned vs done, weekly running time across the season, long-run progression toward each race, readiness and sleep, recent sessions with time in each heart-rate zone, and everything the plan changed. It's a local file, so nothing leaves your machine.
+- Each sync also checks **how** you ran, using your Garmin heart-rate zones. It flags easy days run too hard, hard sessions that never reached the target zone, and long runs well short of their climbing target. It also warns if your zones are based on max HR while Garmin knows your lactate threshold.
+- `uv run trailplan race-plan [race] [--goal H:MM]` prints race-day splits: arrival time at each checkpoint, buffer against each cutoff, carbs per leg, and gels and fluid to carry out of each aid station. Checkpoints and cutoffs live in `season.toml` under `[[race.checkpoint]]`. Set `carbs_per_hour` and `fluid_ml_per_hour` to match what you've practised.
+
 ## On the watch
 
 Workouts are named `TP …` and appear in the Garmin Connect calendar and on the watch, under the day's scheduled workout and Training → Workouts. Start them from the **Trail Run** activity so you get trail-run data. Targets are your watch's **heart-rate zones**, so set those up properly. Lactate-threshold-based zones work best (Enduro 3 can detect your threshold with a chest strap). Set `hr_targets = false` in `season.toml` if you'd rather not get zone alerts.
