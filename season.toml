@@ -11,6 +11,8 @@ strength = true          # adds a trail strength session (1-2x/week)
 hr_targets = true        # false = no heart-rate zone alerts on the watch
 fuel_every_min = 30      # long runs beep "FUEL: gel + drink" this often (0 = off)
 easy_pace = "6:30"       # easy pace on flat ground (min/km) - used to estimate race durations
+carbs_per_hour = 75      # race-day fuelling target (g carbs/hr)
+fluid_ml_per_hour = 600  # race-day fluid target (ml/hr)
 
 # priority: "A" = goal race (full taper), "B" = training race inside a bigger build (short taper)
 # goal_time (optional) overrides the estimated race duration, e.g. goal_time = "8:30"
@@ -18,20 +20,129 @@ easy_pace = "6:30"       # easy pace on flat ground (min/km) - used to estimate 
 [[race]]
 name = "UTA 50"
 date = 2027-05-15
-distance_km = 51
-elevation_m = 2400
+distance_km = 51.4
+elevation_m = 2429
 priority = "B"
+start = "06:30"          # ESTIMATE - start groups (05:05-08:00) are published 12 Mar 2027
+# Course and cut-offs as published for 2026 on uta.utmb.world (shown for 2027).
+# Overall limit is also 14h30 from your start.
+[[race.checkpoint]]
+name = "CP1 Fairmont Resort"
+km = 18.4
+gain_m = 900
+aid = "full"
+cutoff = "13:00"
+[[race.checkpoint]]
+name = "CP2 Queen Victoria Hosp."
+km = 29.4
+gain_m = 1208
+aid = "full"
+cutoff = "15:50"
+[[race.checkpoint]]
+name = "Emergency Aid Station"
+km = 42.6
+gain_m = 1599
+aid = "water"            # drinks, waffles, limited food
+[[race.checkpoint]]
+name = "Finish"
+km = 51.4
+gain_m = 2429
+aid = "full"
+cutoff = "22:30"
 
 [[race]]
 name = "Guzzler 100"
-date = 2027-07-17        # ESTIMATE - 2027 date not yet published (2026 was 18 Jul)
-distance_km = 100
+date = 2027-07-17        # confirmed on theguzzlerultra.com.au
+distance_km = 105        # sold as 100 km; official stats are 105 km / 4,618 m+
 elevation_m = 4618
 priority = "A"
+start = "06:30"
+# Checkpoints from the 2027 race page / 2026 participant guide.
+# Cumulative climbing is estimated from the official GPX.
+[[race.checkpoint]]
+name = "Gap Creek Rd"
+km = 6
+gain_m = 250
+aid = "water"
+[[race.checkpoint]]
+name = "CP1 Walkabout Creek"
+km = 18
+gain_m = 620
+aid = "full"
+[[race.checkpoint]]
+name = "CP2 McAfees Lookout"
+km = 24
+gain_m = 1060
+aid = "full"             # drop bag, crew via event bus
+[[race.checkpoint]]
+name = "CP3 Gold Creek Reservoir"
+km = 32
+gain_m = 1410
+aid = "full"             # drop bag
+cutoff = "15:00"
+[[race.checkpoint]]
+name = "Leland's Corner"
+km = 42
+gain_m = 2010
+aid = "water"
+[[race.checkpoint]]
+name = "CP4 Lake Manchester"
+km = 57
+gain_m = 2390
+aid = "full"             # drop bag, crew
+cutoff = "21:00"
+[[race.checkpoint]]
+name = "Lightline Rd Bush Camp"
+km = 70
+gain_m = 3120
+aid = "water"
+cutoff = "+1 00:00"
+[[race.checkpoint]]
+name = "CP5 McAfees Lookout"
+km = 84
+gain_m = 3870
+aid = "full"             # drop bag (shared with CP2), crew via bus
+cutoff = "+1 05:30"
+[[race.checkpoint]]
+name = "South Boundary Rd"
+km = 95
+gain_m = 4270
+aid = "water"
+[[race.checkpoint]]
+name = "Finish"
+km = 105
+gain_m = 4618
+aid = "full"
+cutoff = "+1 10:30"
 
 [[race]]
 name = "Cradle Mountain Run"
-date = 2028-02-05        # ESTIMATE - usually the first Saturday in February
-distance_km = 80
-elevation_m = 2000       # ESTIMATE - confirm from the race information pack
+date = 2028-02-05        # ESTIMATE - always the first Saturday in February
+distance_km = 78
+elevation_m = 2195       # not published by the race; Overland Track figure from fastestknowntime.com
 priority = "A"
+start = "06:00"
+# From the 2027 information booklet. Fully self-supported: no drop bags or crew,
+# water from hut tanks and streams. Cut-offs are "leave by" times.
+[[race.checkpoint]]
+name = "Pelion Hut"
+km = 32
+aid = "water"
+cutoff = "12:00"
+[[race.checkpoint]]
+name = "Bert Nichols Hut"
+km = 51
+aid = "water"
+[[race.checkpoint]]
+name = "Narcissus Hut"
+km = 61
+aid = "water"            # limited drinks/fruit/snacks
+cutoff = "17:00"
+[[race.checkpoint]]
+name = "Echo Point Hut"
+km = 67
+aid = "water"
+[[race.checkpoint]]
+name = "Finish Cynthia Bay"
+km = 78
+aid = "full"

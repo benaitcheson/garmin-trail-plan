@@ -222,3 +222,26 @@ def test_dashboard_builds(tmp_path, season):
     assert data["tiles"]["next_race"] == "UTA 50" and len(data["weeks"]) == len(season.weeks)
     html = write_dashboard(store, cfg, date(2026, 10, 20), tmp_path / "d.html").read_text()
     assert "/*__DATA__*/" not in html and "UTA 50" in html
+
+
+def test_race_plan_splits_sum_to_target_and_flag_tight_cutoffs():
+    from trailplan.config import Race
+    from trailplan.raceplan import Checkpoint, build_race_plan, format_race_plan
+    race = Race("Test 50", date(2027, 5, 15), 50, 2400)
+    cps = [
+        Checkpoint("CP1", 10, 500, "full", "09:00"),
+        Checkpoint("Water", 20, 900, "water"),
+        Checkpoint("CP2", 30, 1500, "full", "10:15"),
+        Checkpoint("Finish", 50, 2400, "full", "20:00"),
+    ]
+    plan = build_race_plan(race, cps, start="06:00", target_min=480)
+    assert abs(sum(leg.minutes for leg in plan.legs) - 480) < 0.5
+    assert plan.legs[-1].arrive.strftime("%H:%M") == "14:00"
+    # later legs are slower per effort-km than early ones (fatigue)
+    first, last = plan.legs[0], plan.legs[-1]
+    assert last.minutes / (last.km + last.gain_m / 100) > first.minutes / (first.km + first.gain_m / 100)
+    assert plan.legs[2].buffer_min < 0  # reaches 30 km at ~10:37 on an 8h pace, after the 10:15 cutoff
+    text = format_race_plan(plan, 75, 600)
+    assert "LATE" in text and "Tight on cutoffs" in text
+    # gels carried from the start cover the start -> CP1 leg; fluid only to the next refill
+    assert [c[0] for c in plan.carry] == ["Start", "CP1", "CP2"]

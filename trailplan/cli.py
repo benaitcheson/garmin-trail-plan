@@ -47,6 +47,9 @@ def main() -> None:
     sp.add_argument("--notify", action="store_true", help="macOS notification with today's workout")
 
     sub.add_parser("login", help="Log in to Garmin Connect and save tokens")
+    sp = sub.add_parser("race-plan", help="Race-day splits, cutoff buffers and fuel plan")
+    sp.add_argument("race", nargs="?", help="race name (default: next race)")
+    sp.add_argument("--goal", help="goal time H:MM (default: season.toml goal_time or estimate)")
     sp = sub.add_parser("dashboard", help="Build the progress dashboard (dashboard.html) and open it")
     sp.add_argument("--no-open", action="store_true", help="just write the file")
     sp = sub.add_parser("install-schedule", help="Run sync automatically every morning (macOS)")
@@ -63,7 +66,7 @@ def main() -> None:
         {
             "plan": cmd_plan, "show": cmd_show, "sync": cmd_sync, "login": cmd_login,
             "install-schedule": cmd_install, "uninstall-schedule": cmd_uninstall,
-            "reset": cmd_reset, "debug": cmd_debug, "dashboard": cmd_dashboard,
+            "reset": cmd_reset, "debug": cmd_debug, "dashboard": cmd_dashboard, "race-plan": cmd_race_plan,
         }[args.cmd](args)
     except (ConfigError, ValueError) as e:
         sys.exit(f"Error: {e}")
@@ -192,6 +195,33 @@ def cmd_sync(args) -> None:
     headline = run.title if run else "Rest day"
     detail = (run.adjusted if run and run.adjusted else wellness.summary())
     _notify(args, f"Today: {headline}", detail)
+
+
+def cmd_race_plan(args) -> None:
+    from .config import _parse_hm
+    from .raceplan import Checkpoint, build_race_plan, format_race_plan
+
+    cfg = load_config(args.config)
+    upcoming = [r for r in cfg.races if r.date >= date.today()]
+    if args.race:
+        matches = [r for r in cfg.races if args.race.lower() in r.name.lower()]
+        if not matches:
+            sys.exit(f"No race matching '{args.race}'. Races: {', '.join(r.name for r in cfg.races)}")
+        race = matches[0]
+    elif upcoming:
+        race = upcoming[0]
+    else:
+        sys.exit("No upcoming races in season.toml")
+    a = cfg.athlete
+    plan = build_race_plan(
+        race,
+        [Checkpoint(**c) for c in race.checkpoints],
+        start=race.start,
+        target_min=_parse_hm(args.goal) if args.goal else None,
+        carbs_per_hour=a.carbs_per_hour,
+        fluid_ml_per_hour=a.fluid_ml_per_hour,
+    )
+    print(format_race_plan(plan, a.carbs_per_hour, a.fluid_ml_per_hour))
 
 
 def cmd_dashboard(args) -> None:

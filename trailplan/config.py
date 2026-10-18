@@ -29,6 +29,8 @@ class Race:
     priority: str = "A"
     goal_min: int | None = None
     easy_pace_s: int = 390
+    start: str = "06:00"
+    checkpoints: list[dict] = field(default_factory=list)
 
     @property
     def effort_km(self) -> float:
@@ -58,6 +60,8 @@ class Athlete:
     hr_targets: bool = True
     fuel_every_min: int = 30
     easy_pace_s: int = 390
+    carbs_per_hour: int = 75
+    fluid_ml_per_hour: int = 600
 
 
 @dataclass
@@ -86,6 +90,8 @@ def load_config(path: Path) -> Config:
         strength=bool(a.get("strength", True)),
         hr_targets=bool(a.get("hr_targets", True)),
         fuel_every_min=int(a.get("fuel_every_min", 30)),
+        carbs_per_hour=int(a.get("carbs_per_hour", 75)),
+        fluid_ml_per_hour=int(a.get("fluid_ml_per_hour", 600)),
         easy_pace_s=pace,
     )
     races = []
@@ -100,6 +106,8 @@ def load_config(path: Path) -> Config:
                     priority=str(r.get("priority", "A")).upper(),
                     goal_min=_parse_hm(r["goal_time"]) if r.get("goal_time") else None,
                     easy_pace_s=pace,
+                    start=str(r.get("start", "06:00")),
+                    checkpoints=list(r.get("checkpoint", [])),
                 )
             )
         except KeyError as e:
