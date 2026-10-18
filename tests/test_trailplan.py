@@ -174,3 +174,39 @@ def test_back_to_back_shrinks_before_midweek_easy_goes_short(weekly_min, long_mi
     for wk in build_season(cfg, date(2026, 10, 15), weekly_min, long_min).weeks:
         if any(s.kind == "b2b" and s.minutes > 45 for s in wk.sessions):
             assert all(s.minutes >= 30 for s in wk.sessions if s.kind == "easy"), wk.monday
+
+
+def _act(day, minutes, zones_min, elev=0):
+    return Activity(day, "trail_running", minutes, avg_hr=150, zone_secs=[z * 60 for z in zones_min], elevation=elev)
+
+
+def test_easy_run_too_hard_is_flagged(tmp_path):
+    tue = MON + timedelta(days=1)
+    store = make_store(tmp_path, w.easy(tue, 45))
+    msgs = reconcile(store, [_act(tue, 45, [2, 18, 20, 5, 0])], tue, tue)
+    s = store.run_on(tue)
+    assert s.status == "done" and s.actual["zone_min"] == [2, 18, 20, 5, 0]
+    assert any("too hard" in f for f in s.actual["flags"]) and any("too hard" in m for m in msgs)
+
+
+def test_easy_run_in_zone_is_not_flagged(tmp_path):
+    tue = MON + timedelta(days=1)
+    store = make_store(tmp_path, w.easy(tue, 45))
+    reconcile(store, [_act(tue, 45, [5, 35, 5, 0, 0])], tue, tue)
+    assert store.run_on(tue).actual["flags"] == []
+
+
+def test_long_run_short_on_climbing_is_flagged(tmp_path):
+    sun = MON + timedelta(days=6)
+    run = w.long_run(sun, 180, vert_per_hour=300)
+    assert run.target_vert == 900
+    store = make_store(tmp_path, run)
+    reconcile(store, [_act(sun, 180, [10, 150, 20, 0, 0], elev=300)], sun, sun)
+    assert any("climbing" in f for f in store.run_on(sun).actual["flags"])
+
+
+def test_soft_intervals_are_flagged(tmp_path):
+    tue = MON + timedelta(days=1)
+    store = make_store(tmp_path, w.hill_repeats(tue, 4))  # 6 x 2 min in Zone 4 = 12 min planned
+    reconcile(store, [_act(tue, 50, [10, 25, 13, 2, 0])], tue, tue)
+    assert any("Zone 4+" in f for f in store.run_on(tue).actual["flags"])

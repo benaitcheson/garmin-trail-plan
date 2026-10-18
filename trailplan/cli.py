@@ -151,7 +151,7 @@ def cmd_show(args) -> None:
 
 
 def cmd_sync(args) -> None:
-    from .garmin import fetch_activities, fetch_wellness, push_window
+    from .garmin import fetch_activities, fetch_wellness, push_window, zone_warning
 
     cfg = load_config(args.config)
     store = _store(args)
@@ -171,6 +171,8 @@ def cmd_sync(args) -> None:
     wellness = fetch_wellness(g, today)
     msgs += adapt_today(store, today, wellness, trained_today, force=args.force)
     msgs += push_window(None if args.dry_run else g, store, today, cfg.athlete, args.dry_run)
+    if warning := zone_warning(g):
+        msgs.append(warning)
     if not args.dry_run:
         store.save()
 

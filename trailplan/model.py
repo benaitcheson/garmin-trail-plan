@@ -53,6 +53,8 @@ class Session:
     status: str = "planned"  # planned | done | partial | missed | dropped
     adjusted: str = ""  # why the session was changed from the original plan
     original_title: str = ""
+    target_vert: int = 0  # metres of climbing to aim for (long runs)
+    actual: dict = field(default_factory=dict)  # what you did: minutes, avg_hr, zones, elev, load, flags
 
     @property
     def id(self) -> str:

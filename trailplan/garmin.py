@@ -236,8 +236,35 @@ def fetch_activities(g: Garmin, start: date, end: date) -> list[Activity]:
             day = datetime.fromisoformat(started.replace(" ", "T")).date()
         except ValueError:
             continue
-        out.append(Activity(day, _dig(a, "activityType", "typeKey") or "", (a.get("duration") or 0) / 60))
+        out.append(Activity(
+            day,
+            _dig(a, "activityType", "typeKey") or "",
+            (a.get("duration") or 0) / 60,
+            avg_hr=a.get("averageHR"),
+            zone_secs=[a.get(f"hrTimeInZone_{i}") or 0.0 for i in range(1, 6)],
+            elevation=a.get("elevationGain") or 0,
+            load=a.get("activityTrainingLoad") or 0,
+        ))
     return out
+
+
+def zone_warning(g: Garmin) -> str | None:
+    """Warn if HR zones are max-HR based while Garmin knows your lactate threshold."""
+    try:
+        zones = g.get_heart_rate_zones() or []
+    except Exception as e:
+        log.debug("hr zones: %s", e)
+        return None
+    z = next((z for z in zones if z.get("sport") == "RUNNING"), None) or next(
+        (z for z in zones if z.get("sport") == "DEFAULT"), None)
+    lthr = z and z.get("lactateThresholdHeartRateUsed")
+    if not z or not lthr or z.get("trainingMethod") != "HR_MAX":
+        return None
+    return (
+        f"Your HR zones are based on max HR ({z.get('maxHeartRateUsed')}), so Zone 2 is "
+        f"{z['zone2Floor']}-{z['zone3Floor'] - 1} bpm. Garmin has your lactate threshold at {lthr} bpm: "
+        "in Garmin Connect set Heart Rate Zones to '% Lactate Threshold' so workout targets fit you."
+    )
 
 
 def detect_fitness(g: Garmin, today: date) -> tuple[int, int]:

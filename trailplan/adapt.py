@@ -8,11 +8,11 @@ Each morning:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from . import workouts as w
-from .model import Session
+from .model import Session, Step
 from .store import Store
 
 SEVERITY = {"good": 0, "low": 1, "poor": 2}
@@ -55,6 +55,10 @@ class Activity:
     date: date
     kind: str  # Garmin activity typeKey, e.g. trail_running
     minutes: float
+    avg_hr: float | None = None
+    zone_secs: list[float] = field(default_factory=lambda: [0.0] * 5)  # time in Garmin HR zones 1-5
+    elevation: float = 0  # metres climbed
+    load: float = 0  # Garmin training load
 
     @property
     def is_run(self) -> bool:
@@ -75,7 +79,10 @@ def reconcile(store: Store, activities: list[Activity], start: date, end: date) 
         if s.kind == "strength":
             s.status = "done" if any(a.is_strength for a in day) else "missed"
             continue
-        ran = sum(a.minutes for a in day if a.is_run)
+        runs = [a for a in day if a.is_run]
+        ran = sum(a.minutes for a in runs)
+        if runs:
+            s.actual = summarise(runs)
         if s.kind == "race":
             s.status = "done" if ran else "missed"
             continue
@@ -83,9 +90,61 @@ def reconcile(store: Store, activities: list[Activity], start: date, end: date) 
         s.status = "done" if ratio >= 0.6 else "partial" if ratio >= 0.25 else "missed"
         if s.status != "done":
             msgs.append(f"{s.date:%a %d %b}: {s.title} {s.status} ({round(ran)} of {s.minutes} min).")
+        if runs:
+            s.actual["flags"] = assess(s)
+            if s.actual["flags"]:
+                msgs.append(f"{s.date:%a %d %b}: {s.title} - " + "; ".join(s.actual["flags"]) + ".")
     if end >= start:
         store.reconciled_until = end.isoformat()
     return msgs
+
+
+def summarise(runs: list[Activity]) -> dict:
+    minutes = sum(a.minutes for a in runs)
+    hr_runs = [a for a in runs if a.avg_hr]
+    avg_hr = sum(a.avg_hr * a.minutes for a in hr_runs) / sum(a.minutes for a in hr_runs) if hr_runs else None
+    return {
+        "minutes": round(minutes),
+        "avg_hr": round(avg_hr) if avg_hr else None,
+        "zone_min": [round(sum(a.zone_secs[i] for a in runs) / 60) for i in range(5)],
+        "elev": round(sum(a.elevation for a in runs)),
+        "load": round(sum(a.load for a in runs)),
+    }
+
+
+EASY_EFFORT_KINDS = {"easy", "recovery", "strides", "shakeout", "long", "b2b"}
+
+
+def _flat(steps: list[Step]) -> list[tuple[Step, int]]:
+    out = []
+    for st in steps:
+        if st.kind == "repeat":
+            out += [(c, n * st.reps) for c, n in _flat(st.steps)]
+        else:
+            out.append((st, 1))
+    return out
+
+
+def assess(s: Session) -> list[str]:
+    """How the session was run, judged against its intent. Uses Garmin's own HR zones."""
+    a, flags = s.actual, []
+    zones = a.get("zone_min") or [0] * 5
+    total = sum(zones)
+    if total >= 10 and s.kind in EASY_EFFORT_KINDS and not any(st.zone and st.zone >= 3 for st, _ in _flat(s.steps)):
+        # Long runs get more slack: some climbs push HR up even when hiking.
+        limit = 0.35 if s.kind in ("long", "b2b") else 0.25
+        hard = sum(zones[2:]) / total
+        if hard > limit:
+            flags.append(f"too hard for an easy day ({hard:.0%} above Zone 2) - slow down and hike the climbs")
+    if s.kind == "quality" and total >= 10:
+        target = max((st.zone or 0) for st, _ in _flat(s.steps))
+        planned = sum((st.seconds or 0) * n for st, n in _flat(s.steps) if st.zone == target) / 60
+        reached = sum(zones[target - 1:]) if target else 0
+        if target >= 3 and planned and reached < 0.4 * planned:
+            flags.append(f"only {reached} min in Zone {target}+ (planned {round(planned)}) - push the efforts harder")
+    if s.target_vert and a.get("elev", 0) < 0.6 * s.target_vert:
+        flags.append(f"{a.get('elev', 0)} m climbing vs ~{s.target_vert} m target - pick a hillier route")
+    return flags
 
 
 def adapt_today(store: Store, today: date, wellness: Wellness, trained_today: bool, force: bool = False) -> list[str]:
@@ -140,6 +199,8 @@ def _replace(store: Store, old: Session, new: Session, reason: str) -> Session:
     new.week, new.phase = old.week, old.phase
     new.original_title = old.original_title or old.title
     new.adjusted = reason
+    if old.target_vert and not new.target_vert and old.minutes:
+        new.target_vert = int(round(old.target_vert * new.minutes / old.minutes, -1))
     store.remove(old)
     store.put(new)
     return new

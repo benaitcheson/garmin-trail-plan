@@ -246,10 +246,13 @@ def shakeout(day: date) -> Session:
     )
 
 
+def _vert_target(minutes: int, vert_per_hour: float) -> int:
+    return int(round(vert_per_hour * minutes / 60, -1)) if vert_per_hour >= 50 else 0
+
+
 def _vert_note(minutes: int, vert_per_hour: float) -> str:
-    if vert_per_hour < 50:
-        return ""
-    return f" Aim for ~{int(round(vert_per_hour * minutes / 60, -1))} m of climbing."
+    target = _vert_target(minutes, vert_per_hour)
+    return f" Aim for ~{target} m of climbing." if target else ""
 
 
 def long_run(day: date, minutes: int, vert_per_hour: float = 0) -> Session:
@@ -260,6 +263,7 @@ def long_run(day: date, minutes: int, vert_per_hour: float = 0) -> Session:
         f"Long Run {fmt_min(minutes)}",
         "Time on feet, not pace. Hilly trail route." + _vert_note(minutes, vert_per_hour) + " " + FUEL_NOTE,
         [_warmup(15), Step("run", (minutes - 15) * M, 2, EASY_NOTE)],
+        target_vert=_vert_target(minutes, vert_per_hour),
     )
 
 
@@ -280,7 +284,10 @@ def race_sim(day: date, minutes: int, vert_per_hour: float, ultra: bool) -> Sess
             Step("run", block * M, 3, "Race effort - Zone 3"),
             Step("run", 20 * M, 2, "Ease back"),
         ]
-    return Session(day, "long", f"Race-Sim Long Run {fmt_min(minutes)}", desc, steps)
+    return Session(
+        day, "long", f"Race-Sim Long Run {fmt_min(minutes)}", desc, steps,
+        target_vert=_vert_target(minutes, vert_per_hour),
+    )
 
 
 def back_to_back(day: date, minutes: int) -> Session:
