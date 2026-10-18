@@ -56,6 +56,7 @@ date = 2027-07-17        # confirmed on theguzzlerultra.com.au
 distance_km = 105        # sold as 100 km; official stats are 105 km / 4,618 m+
 elevation_m = 4618
 priority = "A"
+goal_time = "18:30"      # from Kozi 50 (27 Nov 2025: 48.7 km, +1,868 m, 7h17) scaled to 105 km with a night section
 start = "06:30"
 # Checkpoints from the 2027 race page / 2026 participant guide.
 # Cumulative climbing is estimated from the official GPX.
