@@ -16,8 +16,10 @@ class Step:
     seconds: float | None = None  # None = finish the step with the LAP button
     zone: int | None = None  # Garmin heart-rate zone 1-5
     note: str = ""
-    estimate: float = 0  # seconds, used for LAP-button steps
+    estimate: float = 0  # seconds, used for LAP-button and distance steps
     reps: int = 0
+    pace: str | None = None  # road pace target: 5k | 10k | thr | hm | mp (resolved at upload)
+    meters: float | None = None  # ends after this distance instead of a time
     steps: list[Step] = field(default_factory=list)
 
     def est_seconds(self) -> float:

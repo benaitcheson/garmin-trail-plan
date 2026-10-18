@@ -157,7 +157,7 @@ def cmd_show(args) -> None:
 
 
 def cmd_sync(args) -> None:
-    from .garmin import fetch_activities, fetch_wellness, push_window, zone_warning
+    from .garmin import fetch_activities, fetch_fitness, fetch_wellness, push_window, training_paces, zone_warning
 
     cfg = load_config(args.config)
     store = _store(args)
@@ -176,7 +176,14 @@ def cmd_sync(args) -> None:
     trained_today = any(a.date == today and (a.is_run or a.is_strength) for a in acts)
     wellness = fetch_wellness(g, today)
     msgs += adapt_today(store, today, wellness, trained_today, force=args.force)
-    msgs += push_window(None if args.dry_run else g, store, today, cfg.athlete, args.dry_run)
+    fitness = fetch_fitness(g)
+    msgs += _new_pbs(store.fitness, fitness)
+    if fitness["prs"] or fitness["predictions"]:
+        store.fitness = {**fitness, "date": today.isoformat()}
+    marathon_goal = next(
+        (r.goal_min for r in cfg.races if r.road and r.distance_km >= 42 and r.date >= today and r.goal_min), None)
+    paces = training_paces(store.fitness, marathon_goal)
+    msgs += push_window(None if args.dry_run else g, store, today, cfg.athlete, args.dry_run, paces)
     if warning := zone_warning(g):
         msgs.append(warning)
     if not args.dry_run:
@@ -197,9 +204,27 @@ def cmd_sync(args) -> None:
     _notify(args, f"Today: {headline}", detail)
 
 
+PB_NAMES = {"5k": "5 km", "10k": "10 km", "hm": "half marathon", "m": "marathon"}
+
+
+def fmt_secs(secs: float) -> str:
+    s = round(secs)
+    h, m, s = s // 3600, s % 3600 // 60, s % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _new_pbs(old: dict, new: dict) -> list[str]:
+    msgs = []
+    for key, pr in (new.get("prs") or {}).items():
+        before = (old.get("prs") or {}).get(key)
+        if before and pr["secs"] < before["secs"]:
+            msgs.append(f"New {PB_NAMES[key]} PB: {fmt_secs(pr['secs'])} (was {fmt_secs(before['secs'])}). Nice work!")
+    return msgs
+
+
 def cmd_race_plan(args) -> None:
     from .config import _parse_hm
-    from .raceplan import Checkpoint, build_race_plan, format_race_plan
+    from .raceplan import Checkpoint, build_race_plan, format_race_plan, road_checkpoints
 
     cfg = load_config(args.config)
     upcoming = [r for r in cfg.races if r.date >= date.today()]
@@ -213,13 +238,17 @@ def cmd_race_plan(args) -> None:
     else:
         sys.exit("No upcoming races in season.toml")
     a = cfg.athlete
+    checkpoints = [Checkpoint(**c) for c in race.checkpoints]
+    if not checkpoints and race.road:
+        checkpoints = road_checkpoints(race)
     plan = build_race_plan(
         race,
-        [Checkpoint(**c) for c in race.checkpoints],
+        checkpoints,
         start=race.start,
         target_min=_parse_hm(args.goal) if args.goal else None,
         carbs_per_hour=a.carbs_per_hour,
         fluid_ml_per_hour=a.fluid_ml_per_hour,
+        slowdown=0.02 if race.road else 0.30,  # aim for near-even splits on the road
     )
     print(format_race_plan(plan, a.carbs_per_hour, a.fluid_ml_per_hour))
 

@@ -41,6 +41,13 @@ STEP_TYPES = {
 }
 END_TIME = {"conditionTypeId": 2, "conditionTypeKey": "time", "displayOrder": 2, "displayable": True}
 END_LAP = {"conditionTypeId": 1, "conditionTypeKey": "lap.button", "displayOrder": 1, "displayable": True}
+END_DISTANCE = {"conditionTypeId": 3, "conditionTypeKey": "distance", "displayOrder": 3, "displayable": True}
+PACE_ZONE = {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone", "displayOrder": 1}
+PACE_TOLERANCE = 0.03  # target window: +/-3% around the pace
+# Garmin personal-record type ids -> distance keys, and race prediction keys.
+PR_TYPES = {3: "5k", 4: "10k", 5: "hm", 6: "m"}
+PREDICTION_KEYS = {"5k": "time5K", "10k": "time10K", "hm": "timeHalfMarathon", "m": "timeMarathon"}
+RACE_KM = {"5k": 5.0, "10k": 10.0, "hm": 21.0975, "m": 42.195}
 NO_TARGET = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1}
 HR_ZONE = {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone", "displayOrder": 1}
 RUNNING = {"sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1}
@@ -65,7 +72,9 @@ def connect() -> Garmin:
 
 # ---------------------------------------------------------------- workouts
 
-def to_payload(s: Session, hr_targets: bool = True, fuel_every_min: int = 0) -> dict[str, Any]:
+def to_payload(
+    s: Session, hr_targets: bool = True, fuel_every_min: int = 0, paces: dict[str, float] | None = None
+) -> dict[str, Any]:
     name = (NAME_PREFIX + s.title)[:60]
     description = s.description + (f" [Adjusted: {s.adjusted}]" if s.adjusted else "")
     run_steps = s.steps
@@ -96,28 +105,94 @@ def to_payload(s: Session, hr_targets: bool = True, fuel_every_min: int = 0) -> 
         workout = RunningWorkout(
             workoutName=name, description=description, estimatedDurationInSecs=s.minutes * 60,
             workoutSegments=[WorkoutSegment(
-                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(run_steps, counter, hr_targets))],
+                segmentOrder=1, sportType=RUNNING, workoutSteps=_steps(run_steps, counter, hr_targets, paces or {}))],
         )
     return workout.to_dict()
 
 
-def _steps(steps: list[Step], counter, hr_targets: bool) -> list:
+def _steps(steps: list[Step], counter, hr_targets: bool, paces: dict[str, float]) -> list:
     out = []
     for st in steps:
         order = next(counter)
         if st.kind == "repeat":
-            out.append(create_repeat_group(st.reps, _steps(st.steps, counter, hr_targets), order))
+            out.append(create_repeat_group(st.reps, _steps(st.steps, counter, hr_targets, paces), order))
             continue
-        zoned = hr_targets and st.zone is not None
+        if st.meters is not None:
+            end, end_value = END_DISTANCE, st.meters
+        elif st.seconds is not None:
+            end, end_value = END_TIME, st.seconds
+        else:
+            end, end_value = END_LAP, None
+        target = dict(targetType=NO_TARGET)
+        if st.pace and st.pace in paces:
+            secs_per_km = paces[st.pace]
+            # Garmin pace targets are speeds in m/s; the slower pace is the lower value.
+            target = dict(
+                targetType=PACE_ZONE,
+                targetValueOne=1000 / (secs_per_km * (1 + PACE_TOLERANCE)),
+                targetValueTwo=1000 / (secs_per_km * (1 - PACE_TOLERANCE)),
+            )
+        elif hr_targets and st.zone is not None:
+            target = dict(targetType=HR_ZONE, zoneNumber=st.zone)
+        note = st.note
+        if st.pace and st.pace in paces:
+            note = f"{note} ({fmt_pace(paces[st.pace])}/km)"
         out.append(ExecutableStep(
             stepOrder=order,
             stepType=STEP_TYPES[st.kind],
-            endCondition=END_TIME if st.seconds is not None else END_LAP,
-            endConditionValue=st.seconds,
-            targetType=HR_ZONE if zoned else NO_TARGET,
-            zoneNumber=st.zone if zoned else None,
-            description=st.note or None,
+            endCondition=end,
+            endConditionValue=end_value,
+            description=note or None,
+            **target,
         ))
+    return out
+
+
+def fmt_pace(secs_per_km: float) -> str:
+    s = round(secs_per_km)
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def training_paces(fitness: dict, marathon_goal_min: int | None = None) -> dict[str, float]:
+    """Pace (sec/km) for each road pace role, from Garmin's current race predictions."""
+    pred = fitness.get("predictions") or {}
+    per_km = {k: pred[k] / RACE_KM[k] for k in RACE_KM if pred.get(k)}
+    if not per_km:
+        return {}
+    paces = {}
+    if "5k" in per_km:
+        paces["5k"] = per_km["5k"]
+    if "10k" in per_km:
+        paces["10k"] = per_km["10k"]
+    if "hm" in per_km:
+        paces["hm"] = per_km["hm"]
+    if "10k" in per_km and "hm" in per_km:
+        paces["thr"] = (per_km["10k"] + per_km["hm"]) / 2
+    # Marathon pace: your goal if you've set one (and it's not slower than predicted), else the prediction.
+    mp = [v for v in (marathon_goal_min and marathon_goal_min * 60 / RACE_KM["m"], per_km.get("m")) if v]
+    if mp:
+        paces["mp"] = min(mp)
+    return paces
+
+
+def fetch_fitness(g: Garmin) -> dict:
+    """Current road PBs (seconds, date) and Garmin race predictions (seconds)."""
+    out: dict = {"prs": {}, "predictions": {}}
+    try:
+        for p in g.get_personal_record() or []:
+            key = PR_TYPES.get(p.get("typeId"))
+            if key and p.get("value"):
+                when = (p.get("prStartTimeGmtFormatted") or p.get("actStartDateTimeInGMTFormatted") or "")[:10]
+                out["prs"][key] = {"secs": round(p["value"]), "date": when}
+    except Exception as e:
+        log.debug("personal records: %s", e)
+    try:
+        pred = g.get_race_predictions() or {}
+        if isinstance(pred, list):
+            pred = pred[0] if pred else {}
+        out["predictions"] = {k: pred[v] for k, v in PREDICTION_KEYS.items() if pred.get(v)}
+    except Exception as e:
+        log.debug("race predictions: %s", e)
     return out
 
 
@@ -133,13 +208,19 @@ def _remove_uploaded(g: Garmin, rec: dict) -> None:
         log.debug("delete %s: %s", rec["workout_id"], e)
 
 
-def push_window(g: Garmin | None, store: Store, today: date, athlete: Athlete, dry_run: bool) -> list[str]:
+def push_window(
+    g: Garmin | None, store: Store, today: date, athlete: Athlete, dry_run: bool,
+    paces: dict[str, float] | None = None,
+) -> list[str]:
     """Make Garmin's calendar match the plan for the next WINDOW_DAYS days."""
     msgs = []
+    paces = paces or {}
 
     def version(s: Session) -> str:
-        # Watch-side settings change the uploaded workout too, so they're part of its version.
-        return f"{s.content_hash()}:hr{int(athlete.hr_targets)}:fuel{athlete.fuel_every_min}"
+        # Watch-side settings (and current paces) change the uploaded workout too.
+        used = sorted({st.pace for st, _ in _all_steps(s.steps) if st.pace})
+        pace_sig = ",".join(f"{p}{round(paces[p])}" for p in used if p in paces)
+        return f"{s.content_hash()}:hr{int(athlete.hr_targets)}:fuel{athlete.fuel_every_min}:{pace_sig}"
 
     end = today + timedelta(days=WINDOW_DAYS - 1)
     wanted = {s.id: s for s in store.between(today, end) if s.uploadable}
@@ -162,7 +243,7 @@ def push_window(g: Garmin | None, store: Store, today: date, athlete: Athlete, d
         msgs.append(f"Sending to watch: {s.date:%a %d %b}  {s.title}")
         if dry_run:
             continue
-        resp = g.upload_workout(to_payload(s, athlete.hr_targets, athlete.fuel_every_min))
+        resp = g.upload_workout(to_payload(s, athlete.hr_targets, athlete.fuel_every_min, paces))
         workout_id = resp["workoutId"]
         sched = g.schedule_workout(workout_id, s.date.isoformat()) or {}
         store.garmin[sid] = {
@@ -175,6 +256,13 @@ def push_window(g: Garmin | None, store: Store, today: date, athlete: Athlete, d
         store.save()  # save as we go so an interrupted sync can resume cleanly
         time.sleep(0.5)
     return msgs
+
+
+def _all_steps(steps: list[Step], n: int = 1) -> list[tuple[Step, int]]:
+    out = []
+    for st in steps:
+        out += _all_steps(st.steps, n * st.reps) if st.kind == "repeat" else [(st, n)]
+    return out
 
 
 def remove_all(g: Garmin, store: Store, by_name: bool) -> int:

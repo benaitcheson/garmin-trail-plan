@@ -37,6 +37,18 @@ def _session_row(s: Session) -> dict:
     }
 
 
+PB_ROWS = [("5k", "5 km", 5.0), ("10k", "10 km", 10.0), ("hm", "Half marathon", 21.0975), ("m", "Marathon", 42.195)]
+
+
+def _pbs(fitness: dict) -> list[dict]:
+    prs, pred = fitness.get("prs") or {}, fitness.get("predictions") or {}
+    return [
+        {"key": k, "name": name, "km": km, "pb": (prs.get(k) or {}).get("secs"),
+         "pb_date": (prs.get(k) or {}).get("date"), "pred": pred.get(k)}
+        for k, name, km in PB_ROWS if prs.get(k) or pred.get(k)
+    ]
+
+
 def build_data(store: Store, cfg: Config, today: date) -> dict:
     by_week: dict[str, list[Session]] = {}
     for s in store.sessions.values():
@@ -106,6 +118,7 @@ def build_data(store: Store, cfg: Config, today: date) -> dict:
             if d >= (today - timedelta(days=42)).isoformat()
         ],
         "sessions": [_session_row(s) for s in recent],
+        "pbs": _pbs(store.fitness),
         "log": store.log[-25:][::-1],
     }
 
@@ -234,6 +247,12 @@ details { margin-top: 10px; } summary { cursor: pointer; color: var(--text-secon
     <div class="legend"><span class="key"><span class="ln" style="background:var(--series-1)"></span>Training Readiness</span>
       <span class="key"><span class="ln" style="background:var(--series-2)"></span>Sleep score</span></div>
     <div class="chart" id="wellness"></div>
+  </section>
+
+  <section class="card" id="pb-card">
+    <h2>Road PBs</h2>
+    <p class="sub">Your personal bests vs what Garmin predicts you could run today. Road-session paces come from these predictions.</p>
+    <div class="table-wrap" id="pbs"></div>
   </section>
 
   <section class="card">
@@ -501,12 +520,33 @@ function renderSessions() {
   tbl.appendChild(tb); $("sessions").replaceChildren(tbl);
 }
 
+function renderPBs() {
+  const rows = DATA.pbs || [];
+  if (!rows.length) { $("pb-card").style.display = "none"; return; }
+  const t = (s) => { if (s == null) return "–"; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+  const pace = (s, km) => { if (s == null) return ""; const p = Math.round(s / km); return `${Math.floor(p / 60)}:${String(p % 60).padStart(2, "0")}/km`; };
+  const tbl = h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Distance" }), h("th", { class: "num", text: "PB" }),
+    h("th", { text: "Set" }), h("th", { class: "num", text: "Garmin predicts" }), h("th", { class: "num", text: "Gap" }))));
+  const tb = h("tbody");
+  for (const r of rows) {
+    const gap = r.pb != null && r.pred != null ? r.pred - r.pb : null;
+    const gapTxt = gap == null ? "" : gap < 0 ? `${t(-gap)} faster than PB ✓` : `${t(gap)} to find`;
+    tb.appendChild(h("tr", {}, h("td", { text: r.name }),
+      h("td", { class: "num" }, h("div", { text: t(r.pb) }), h("div", { class: "muted", text: pace(r.pb, r.km) })),
+      h("td", { text: r.pb_date ? d(r.pb_date).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "" }),
+      h("td", { class: "num" }, h("div", { text: t(r.pred) }), h("div", { class: "muted", text: pace(r.pred, r.km) })),
+      h("td", { class: "num", text: gapTxt })));
+  }
+  tbl.appendChild(tb); $("pbs").replaceChildren(tbl);
+}
+
 function renderLog() {
   const items = DATA.log.map(l => h("li", {}, h("span", { class: "muted", text: dShort(l.date) + "  " }), l.msg));
   $("log").replaceChildren(...(items.length ? items : [h("li", { text: "Nothing yet." })]));
 }
 
-function renderAll() { renderTiles(); renderVolume(); renderLongRun(); renderWellness(); renderSessions(); renderLog(); }
+function renderAll() { renderTiles(); renderVolume(); renderLongRun(); renderWellness(); renderPBs(); renderSessions(); renderLog(); }
 $("updated").textContent = "Updated " + dDay(DATA.today);
 renderAll();
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(renderAll, 150); });

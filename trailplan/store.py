@@ -20,6 +20,7 @@ class Store:
     decisions: dict[str, dict] = field(default_factory=dict)  # date iso -> readiness decision
     log: list[dict] = field(default_factory=list)
     reconciled_until: str | None = None
+    fitness: dict = field(default_factory=dict)  # Garmin PBs + race predictions, refreshed each sync
 
     @classmethod
     def load(cls, path: Path) -> Store:
@@ -35,6 +36,7 @@ class Store:
             decisions=raw.get("decisions", {}),
             log=raw.get("log", []),
             reconciled_until=raw.get("reconciled_until"),
+            fitness=raw.get("fitness", {}),
         )
 
     def save(self) -> None:
@@ -46,6 +48,7 @@ class Store:
             "decisions": self.decisions,
             "log": self.log[-500:],
             "reconciled_until": self.reconciled_until,
+            "fitness": self.fitness,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=1))

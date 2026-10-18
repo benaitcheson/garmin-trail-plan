@@ -75,6 +75,7 @@ def build_race_plan(
     target_min: int | None = None,
     carbs_per_hour: int = 75,
     fluid_ml_per_hour: int = 600,
+    slowdown: float = SLOWDOWN,
 ) -> RacePlan:
     if not checkpoints:
         raise ValueError(f"No checkpoints for {race.name} - add [[race.checkpoint]] entries in season.toml")
@@ -95,7 +96,7 @@ def build_race_plan(
         km, gain = c.km - prev_km, max(c.gain_m - prev_gain, 0)
         effort = km + gain / 100
         mid = (prev_km + c.km) / 2 / total_km
-        raw.append((c, km, gain, effort * (1 + SLOWDOWN * mid)))
+        raw.append((c, km, gain, effort * (1 + slowdown * mid)))
         prev_km, prev_gain = c.km, max(c.gain_m, prev_gain)
     scale = target / sum(r[3] for r in raw) if total_effort else 0
 
@@ -127,6 +128,20 @@ def build_race_plan(
     return plan
 
 
+def road_checkpoints(race: Race, every_km: float = 5) -> list[Checkpoint]:
+    """Even splits for a road race: a drinks station every `every_km` km."""
+    marks = [every_km * i for i in range(1, int(race.distance_km // every_km) + 1) if every_km * i < race.distance_km]
+    return [Checkpoint(f"{m:g} km", m, 0, "water") for m in marks] + [
+        Checkpoint("Finish", race.distance_km, 0, "full")]
+
+
+def _pace(minutes: float, km: float) -> str:
+    if not km:
+        return "-"
+    s = round(minutes * 60 / km)
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def _clock(t: datetime, start: datetime) -> str:
     days = (t.date() - start.date()).days
     return (f"+{days} " if days else "") + t.strftime("%H:%M")
@@ -136,10 +151,10 @@ def format_race_plan(plan: RacePlan, carbs_per_hour: int, fluid_ml_per_hour: int
     r = plan.race
     lines = [
         f"{r.name} - {r.date:%a %d %b %Y}, start {plan.start:%H:%M}, target {fmt_min(plan.target_min)}",
-        f"Fuel: ~{carbs_per_hour} g carbs/hr (about {carbs_per_hour / GEL_CARBS:.1f} gels/hr), "
-        f"~{fluid_ml_per_hour} ml fluid/hr - more in heat.",
+        (f"Fuel: ~{carbs_per_hour} g carbs/hr (about {carbs_per_hour / GEL_CARBS:.1f} gels/hr), "
+         f"~{fluid_ml_per_hour} ml fluid/hr - more in heat." if plan.target_min >= 75 else "Even pacing: hold the same pace every km."),
         "",
-        f"{'Checkpoint':<34}{'km':>6}{'climb':>7}{'leg':>7}{'arrive':>10}{'cutoff':>10}{'buffer':>9}{'carbs':>7}",
+        f"{'Checkpoint':<34}{'km':>6}{'climb':>7}{'leg':>7}{'pace':>7}{'arrive':>10}{'cutoff':>10}{'buffer':>9}{'carbs':>7}",
     ]
     for leg in plan.legs:
         cut = leg.to.cutoff or "-"
@@ -150,6 +165,7 @@ def format_race_plan(plan: RacePlan, carbs_per_hour: int, fluid_ml_per_hour: int
         aid = {"full": "", "water": " (water)", "none": " (no aid)"}.get(leg.to.aid, "")
         lines.append(
             f"{(leg.to.name + aid)[:33]:<34}{leg.to.km:>6.1f}{round(leg.gain_m):>6}m{fmt_min(leg.minutes):>7}"
+            f"{_pace(leg.minutes, leg.km):>7}"
             f"{_clock(leg.arrive, plan.start):>10}{cut:>10}{buf:>9}{leg.carbs_g:>6}g"
         )
     tight = [leg for leg in plan.legs if leg.buffer_min is not None and leg.buffer_min < 30]
@@ -157,6 +173,9 @@ def format_race_plan(plan: RacePlan, carbs_per_hour: int, fluid_ml_per_hour: int
     if tight:
         lines.append("⚠ Tight on cutoffs at: " + ", ".join(
             f"{leg.to.name} ({'late' if leg.buffer_min < 0 else fmt_min(leg.buffer_min) + ' spare'})" for leg in tight))
+    if plan.target_min < 75:
+        lines.append("No fuel needed for a race this short - a sip of water at a station if it's hot.")
+        return "\n".join(lines)
     lines.append("Carry out of each full aid station (gels or equivalent, fluid):")
     for frm, gels, fluid in plan.carry:
         lines.append(f"  from {frm:<28} {gels:>2} gels  {fluid:>5} ml")

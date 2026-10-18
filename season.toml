@@ -116,6 +116,28 @@ gain_m = 4618
 aid = "full"
 cutoff = "+1 10:30"
 
+# ---- Road PB block (Aug-Oct 2027): after Guzzler recovery, before the Cradle build.
+# Road sessions use pace targets taken from Garmin's latest race predictions, so they
+# speed up as you get fitter. Use H:MM:SS for goals under an hour.
+
+[[race]]
+name = "Bridge to Brisbane 10k"
+type = "road"
+date = 2027-09-12        # ESTIMATE - 2026 was Sun 13 Sep (second Sunday of September)
+distance_km = 10
+priority = "B"
+goal_time = "0:44:00"    # PB is 44:33 (Aug 2019)
+start = "06:00"
+
+[[race]]
+name = "Melbourne Marathon"
+type = "road"
+date = 2027-10-10        # ESTIMATE - 2026 was Sun 11 Oct
+distance_km = 42.195
+priority = "A"
+goal_time = "3:50"       # PB is 4:18:40 (Gold Coast 2019); Garmin predicts ~3:58 today
+start = "07:00"
+
 [[race]]
 name = "Cradle Mountain Run"
 date = 2028-02-05        # ESTIMATE - always the first Saturday in February

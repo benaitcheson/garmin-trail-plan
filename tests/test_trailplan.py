@@ -245,3 +245,58 @@ def test_race_plan_splits_sum_to_target_and_flag_tight_cutoffs():
     assert "LATE" in text and "Tight on cutoffs" in text
     # gels carried from the start cover the start -> CP1 leg; fluid only to the next refill
     assert [c[0] for c in plan.carry] == ["Start", "CP1", "CP2"]
+
+
+FITNESS = {"predictions": {"5k": 1323, "10k": 2822, "hm": 6425, "m": 14271},
+           "prs": {"5k": {"secs": 1251, "date": "2019-09-13"}}}
+
+
+def test_parse_goal_times():
+    from trailplan.config import _parse_hm
+    assert _parse_hm("3:50") == 230 and _parse_hm("0:44:00") == 44 and _parse_hm("6:30") == 390
+
+
+def test_road_block_between_guzzler_and_cradle(season):
+    road = [s for s in season.sessions if date(2027, 8, 1) <= s.date < date(2027, 10, 10)]
+    titles = [s.title for s in road]
+    assert any(t.startswith("Intervals") for t in titles)
+    assert any(t.startswith("Threshold") for t in titles)
+    assert any("@MP" in t for t in titles)
+    assert any(t == "5k Time Trial" for t in titles)
+    assert not any(s.kind == "b2b" for s in road), "no back-to-backs in the road block"
+    assert max(s.minutes for s in road if s.kind == "long") <= 180
+    assert any(s.kind == "race" and s.title == "RACE: Melbourne Marathon" for s in season.sessions)
+
+
+def test_training_paces_from_predictions():
+    from trailplan.garmin import training_paces
+    p = training_paces(FITNESS)
+    assert round(p["5k"]) == 265 and round(p["10k"]) == 282          # 4:25/km, 4:42/km
+    assert p["10k"] < p["thr"] < p["hm"]
+    assert round(p["mp"]) == round(14271 / 42.195)
+    assert round(training_paces(FITNESS, marathon_goal_min=230)["mp"]) == 327  # goal 3:50 is faster -> 5:27/km
+    assert training_paces({}) == {}
+
+
+def test_pace_targets_in_payload():
+    from trailplan.garmin import training_paces
+    s = w.road_intervals(MON, 0)  # 5 x 1000 m at 5k pace
+    payload = to_payload(s, paces=training_paces(FITNESS))
+    rep = next(st for st in payload["workoutSegments"][0]["workoutSteps"] if st["type"] == "RepeatGroupDTO"
+               and st["workoutSteps"][0].get("endCondition", {}).get("conditionTypeKey") == "distance")
+    work = rep["workoutSteps"][0]
+    assert work["endConditionValue"] == 1000 and work["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+    assert work["targetValueOne"] < 1000 / 265 < work["targetValueTwo"]  # slower bound first, in m/s
+    assert "4:25/km" in work["description"]
+    # without predictions the same step falls back to its HR zone
+    fallback = to_payload(s)
+    rep = next(st for st in fallback["workoutSegments"][0]["workoutSteps"] if st["type"] == "RepeatGroupDTO"
+               and st["workoutSteps"][0].get("endCondition", {}).get("conditionTypeKey") == "distance")
+    assert rep["workoutSteps"][0]["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
+
+
+def test_new_pb_detected():
+    from trailplan.cli import _new_pbs
+    new = {"prs": {"5k": {"secs": 1225, "date": "2027-08-21"}}}
+    assert _new_pbs(FITNESS, new) == ["New 5 km PB: 20:25 (was 20:51). Nice work!"]
+    assert _new_pbs(FITNESS, FITNESS) == []

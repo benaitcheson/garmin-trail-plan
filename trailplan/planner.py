@@ -26,6 +26,8 @@ LONG_SHARE = {3: 0.42, 4: 0.35, 5: 0.30, 6: 0.27}
 PEAK_LONG = [(60, 90), (120, 150), (240, 195), (360, 240), (600, 300), (1200, 330)]
 # Post-race recovery weeks, as a share of the previous peak load.
 RECOVERY_FACTORS = {1: [0.5], 2: [0.4, 0.7], 3: [0.3, 0.55, 0.75]}
+# Longest road long run (minutes), even in a marathon build.
+ROAD_LONG_CAP = 180
 # Max week-on-week growth in actual run time (deload weeks excluded).
 MAX_RAMP = 1.12
 # Long run never more than this share of the week's (ramp-capped) run time.
@@ -80,6 +82,8 @@ def clamp(x: float, lo: float, hi: float) -> float:
 
 
 def recovery_weeks(race: Race) -> int:
+    if race.est_min < 90:  # a 5k/10k needs a few easy days, not recovery weeks
+        return 0
     weeks = int(clamp(round(race.est_min / 60 / 5), 1, 3))
     return max(1, weeks - 1) if race.priority == "B" else weeks
 
@@ -90,7 +94,7 @@ def rest_days_after(race: Race) -> int:
 
 def taper_weeks(race: Race) -> int:
     if race.priority == "B":
-        return 2  # one lighter week, then race week
+        return 1 if race.est_min < 90 else 2  # short races: race week only
     return 3 if race.est_min >= 600 else 2
 
 
@@ -144,8 +148,12 @@ def build_season(cfg: Config, today: date, weekly_min: int, long_min: int) -> Se
         nb = pre - sum(deloads)
 
         ideal_long = interp(race.est_min, PEAK_LONG)
+        if race.road:  # road long runs top out lower: 3h for a marathon, 2h for shorter races
+            ideal_long = min(ideal_long, ROAD_LONG_CAP if race.distance_km >= 30 else 120)
         step = 20 if race.ultra else 15
         L_peak = min(L0, 330) if L0 >= ideal_long else min(ideal_long, L0 + step * max(nb - 1, 0))
+        if race.road:
+            L_peak = min(L_peak, ROAD_LONG_CAP)
         W_target = max(W0, L_peak / LONG_SHARE[a.days])
         W_peak = max(W0, min(W_target, W0 * 1.07 ** max(nb - 1, 0)))
         if L_peak < ideal_long * 0.85:
@@ -213,7 +221,10 @@ def build_season(cfg: Config, today: date, weekly_min: int, long_min: int) -> Se
         )
         prev, prev_W, prev_L = race, actual_W, actual_L
         # Long-run fitness is mostly kept after a B race; rebuild more gently after an A race.
-        W0, L0 = actual_W * 0.8, actual_L * (0.75 if race.priority == "B" else 0.6)
+        if race.est_min < 90:  # a 5k/10k inside a block costs almost nothing
+            W0, L0 = actual_W * 0.95, actual_L * 0.95
+        else:
+            W0, L0 = actual_W * 0.8, actual_L * (0.75 if race.priority == "B" else 0.6)
 
     return SeasonPlan(weeks, notes)
 
@@ -235,6 +246,12 @@ def _week_sessions(
         d = long_date + timedelta(days=offset)
         if first_recovery:
             easy_days.append(d)
+        elif race.road and role in ("L", "Q1", "Q2"):
+            s = _road_session(race, role, d, long_date, phase, easy_wk, L, level)
+            if s:
+                out.append(s)
+            else:
+                easy_days.append(d)
         elif role == "L":
             if phase == "peak" and not deload:
                 out.append(w.race_sim(d, max(L, 60), vph, race.ultra))
@@ -280,6 +297,35 @@ def _week_sessions(
         out += [w.strength(long_date + timedelta(days=o), light=phase == "taper") for o in offsets]
 
     return sorted(out, key=lambda s: (s.date, s.kind == "strength"))
+
+
+def _road_session(
+    race: Race, role: str, d: date, long_date: date, phase: str, easy_wk: bool, L: float, level: int
+) -> Session | None:
+    """Road-PB sessions: pace-targeted intervals, threshold and marathon-pace long runs."""
+    hard = phase in ("build", "peak") and not easy_wk
+    if role == "L":
+        minutes = min(max(L, 45), ROAD_LONG_CAP)
+        mp = (min(20 + 10 * level, 50) if phase == "build" else 60) if hard else 0
+        if phase == "build" and level == 1:
+            mp = 0  # day after the 5k time trial: keep it easy
+        return w.road_long(d, minutes, mp)
+    if role == "Q1":
+        if easy_wk or phase == "base":
+            return w.strides(d, 35)
+        if phase == "taper":
+            return w.sharpener(d)
+        if phase == "build" and level == 1:
+            # 5k time trial on Saturday (parkrun) instead of the midweek session.
+            return w.time_trial(long_date - timedelta(days=1), 5)
+        if phase == "build":
+            return w.road_intervals(d, level // 2) if level % 2 == 0 else w.road_threshold(d, level // 2)
+        return w.road_threshold(d, level + 2)
+    if role == "Q2":
+        if easy_wk:
+            return None
+        return w.road_threshold(d, level) if hard else w.strides(d, 35)
+    return None
 
 
 def _trim(sessions: list[Session], cap: float) -> list[Session]:

@@ -301,6 +301,89 @@ def back_to_back(day: date, minutes: int) -> Session:
     )
 
 
+# ---------------------------------------------------------------- road (PB) sessions
+# Pace targets are roles ("5k", "thr", "mp"...) turned into real paces at upload time
+# from Garmin's latest race predictions, so they track your fitness. The HR zone is
+# the fallback if no prediction is available.
+
+INTERVAL_PROGRESSION = [(5, 1000), (6, 1000), (5, 1200), (4, 1600), (6, 1000), (3, 2000)]
+THRESHOLD_PROGRESSION = [(3, 8), (3, 10), (2, 15), (4, 8), (2, 20)]
+
+
+def road_intervals(day: date, level: int) -> Session:
+    reps, metres = INTERVAL_PROGRESSION[min(level, len(INTERVAL_PROGRESSION) - 1)]
+    label = f"{metres // 1000}km" if metres % 1000 == 0 else f"{metres}m"
+    return Session(
+        day,
+        "quality",
+        f"Intervals {reps}x{label}",
+        "5k-pace repeats on a flat road or track. Even splits - the last rep should match the first.",
+        [
+            _warmup(15),
+            _strides(4),
+            Step(
+                "repeat",
+                reps=reps,
+                steps=[
+                    Step("run", None, 5, "5k pace", estimate=metres * 0.26, pace="5k", meters=metres),
+                    Step("recovery", 120, None, "Easy jog"),
+                ],
+            ),
+            _cooldown(10),
+        ],
+    )
+
+
+def road_threshold(day: date, level: int) -> Session:
+    reps, mins = THRESHOLD_PROGRESSION[min(level, len(THRESHOLD_PROGRESSION) - 1)]
+    return Session(
+        day,
+        "quality",
+        f"Threshold {reps}x{mins}min",
+        "Comfortably hard, controlled - you could hold it for about an hour. Flat route.",
+        [
+            _warmup(15),
+            Step(
+                "repeat",
+                reps=reps,
+                steps=[Step("run", mins * M, 4, "Threshold pace", pace="thr"), Step("recovery", 2 * M, None, "Easy jog")],
+            ),
+            _cooldown(10),
+        ],
+    )
+
+
+def road_long(day: date, minutes: int, race_pace_min: int = 0) -> Session:
+    """Easy long run, optionally finishing with a block at marathon pace."""
+    minutes = r5(minutes)
+    block = min(r5(race_pace_min), minutes - 30) if race_pace_min else 0
+    steps = [_warmup(15), Step("run", (minutes - 15 - block) * M, 2, "Easy, relaxed")]
+    title = f"Long Run {fmt_min(minutes)}"
+    desc = "Flat-ish road or smooth trail. " + FUEL_NOTE
+    if block:
+        steps.append(Step("run", block * M, 3, "Marathon pace - smooth and controlled", pace="mp"))
+        title = f"Long Run {fmt_min(minutes)} ({block}min @MP)"
+        desc = f"Finish with {block} min at marathon pace. Practise your race-day fuelling. " + FUEL_NOTE
+    return Session(day, "long", title, desc, steps)
+
+
+def time_trial(day: date, km: float) -> Session:
+    label = f"{km:g}k"
+    return Session(
+        day,
+        "quality",
+        f"{label} Time Trial",
+        f"All-out {label} - parkrun is perfect. Start controlled, race the last third. A PB attempt.",
+        [
+            _warmup(15),
+            _strides(4),
+            Step("run", None, 5, f"{label} race effort", estimate=km * 1000 * 0.26,
+                 pace="5k" if km <= 5 else "10k", meters=km * 1000),
+            _cooldown(10),
+        ],
+    )
+
+
 def strength(day: date, light: bool = False) -> Session:
     sets = 2 if light else 3
     exercises = [

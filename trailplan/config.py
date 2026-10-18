@@ -15,9 +15,11 @@ class ConfigError(ValueError):
 
 
 def _parse_hm(value: str) -> int:
-    """'6:30' -> 390 (works for min:sec paces and h:mm times)."""
-    a, b = value.strip().split(":")
-    return int(a) * 60 + int(b)
+    """'6:30' -> 390 (min:sec paces or h:mm times); 'H:MM:SS' -> minutes, e.g. '0:44:00' -> 44."""
+    parts = [int(x) for x in value.strip().split(":")]
+    if len(parts) == 3:
+        return round(parts[0] * 60 + parts[1] + parts[2] / 60)
+    return parts[0] * 60 + parts[1]
 
 
 @dataclass
@@ -31,6 +33,7 @@ class Race:
     easy_pace_s: int = 390
     start: str = "06:00"
     checkpoints: list[dict] = field(default_factory=list)
+    road: bool = False  # road race: pace-based training, no climbing targets
 
     @property
     def effort_km(self) -> float:
@@ -39,7 +42,11 @@ class Race:
 
     @property
     def est_min(self) -> int:
-        return self.goal_min or round(self.effort_km * self.easy_pace_s / 60)
+        if self.goal_min:
+            return self.goal_min
+        if self.road:  # racing on the road is well under easy pace
+            return round(self.distance_km * self.easy_pace_s * 0.82 / 60)
+        return round(self.effort_km * self.easy_pace_s / 60)
 
     @property
     def ultra(self) -> bool:
@@ -107,6 +114,7 @@ def load_config(path: Path) -> Config:
                     goal_min=_parse_hm(r["goal_time"]) if r.get("goal_time") else None,
                     easy_pace_s=pace,
                     start=str(r.get("start", "06:00")),
+                    road=str(r.get("type", "trail")).lower() == "road",
                     checkpoints=list(r.get("checkpoint", [])),
                 )
             )
