@@ -4,3 +4,4 @@ state.json
 state.tmp
 logs/
 .pytest_cache/
+dashboard.html

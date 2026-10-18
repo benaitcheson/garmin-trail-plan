@@ -210,3 +210,15 @@ def test_soft_intervals_are_flagged(tmp_path):
     store = make_store(tmp_path, w.hill_repeats(tue, 4))  # 6 x 2 min in Zone 4 = 12 min planned
     reconcile(store, [_act(tue, 50, [10, 25, 13, 2, 0])], tue, tue)
     assert any("Zone 4+" in f for f in store.run_on(tue).actual["flags"])
+
+
+def test_dashboard_builds(tmp_path, season):
+    from trailplan.dashboard import build_data, write_dashboard
+    store = make_store(tmp_path, *season.sessions)
+    for wk in season.weeks:
+        store.weeks[wk.monday.isoformat()] = {"number": wk.number, "phase": wk.label, "race": wk.race}
+    cfg = load_config(ROOT / "season.toml")
+    data = build_data(store, cfg, date(2026, 10, 20))
+    assert data["tiles"]["next_race"] == "UTA 50" and len(data["weeks"]) == len(season.weeks)
+    html = write_dashboard(store, cfg, date(2026, 10, 20), tmp_path / "d.html").read_text()
+    assert "/*__DATA__*/" not in html and "UTA 50" in html

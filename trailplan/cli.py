@@ -22,6 +22,7 @@ from .store import Store
 ROOT = Path(__file__).resolve().parent.parent
 STATUS_MARK = {"done": "✓", "partial": "~", "missed": "✗", "planned": " ", "dropped": "-"}
 PLIST = Path.home() / "Library/LaunchAgents/com.trailplan.sync.plist"
+DASHBOARD = ROOT / "dashboard.html"
 
 
 def main() -> None:
@@ -46,6 +47,8 @@ def main() -> None:
     sp.add_argument("--notify", action="store_true", help="macOS notification with today's workout")
 
     sub.add_parser("login", help="Log in to Garmin Connect and save tokens")
+    sp = sub.add_parser("dashboard", help="Build the progress dashboard (dashboard.html) and open it")
+    sp.add_argument("--no-open", action="store_true", help="just write the file")
     sp = sub.add_parser("install-schedule", help="Run sync automatically every morning (macOS)")
     sp.add_argument("--times", default="06:30,08:00,10:00", help="comma-separated HH:MM (default 06:30,08:00,10:00)")
     sub.add_parser("uninstall-schedule", help="Stop the automatic morning sync")
@@ -60,7 +63,7 @@ def main() -> None:
         {
             "plan": cmd_plan, "show": cmd_show, "sync": cmd_sync, "login": cmd_login,
             "install-schedule": cmd_install, "uninstall-schedule": cmd_uninstall,
-            "reset": cmd_reset, "debug": cmd_debug,
+            "reset": cmd_reset, "debug": cmd_debug, "dashboard": cmd_dashboard,
         }[args.cmd](args)
     except (ConfigError, ValueError) as e:
         sys.exit(f"Error: {e}")
@@ -175,6 +178,9 @@ def cmd_sync(args) -> None:
         msgs.append(warning)
     if not args.dry_run:
         store.save()
+        from .dashboard import write_dashboard
+
+        write_dashboard(store, cfg, today, DASHBOARD)
 
     print(("[dry run] " if args.dry_run else "") + f"Sync {today:%a %d %b}")
     for m in msgs:
@@ -186,6 +192,15 @@ def cmd_sync(args) -> None:
     headline = run.title if run else "Rest day"
     detail = (run.adjusted if run and run.adjusted else wellness.summary())
     _notify(args, f"Today: {headline}", detail)
+
+
+def cmd_dashboard(args) -> None:
+    from .dashboard import write_dashboard
+
+    path = write_dashboard(_store(args), load_config(args.config), date.today(), DASHBOARD)
+    print(f"Dashboard: {path}")
+    if not args.no_open and sys.platform == "darwin":
+        subprocess.run(["open", str(path)])
 
 
 def cmd_install(args) -> None:
