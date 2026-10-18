@@ -166,3 +166,11 @@ def test_fuel_prompts_in_race_sim_and_payload():
 def test_fuel_off():
     run = w.long_run(MON, 180)
     assert w.add_fuel(run.steps, 0) == run.steps
+
+
+@pytest.mark.parametrize("weekly_min,long_min", [(100, 57), (240, 90)])
+def test_back_to_back_shrinks_before_midweek_easy_goes_short(weekly_min, long_min):
+    cfg = load_config(ROOT / "season.toml")
+    for wk in build_season(cfg, date(2026, 10, 15), weekly_min, long_min).weeks:
+        if any(s.kind == "b2b" and s.minutes > 45 for s in wk.sessions):
+            assert all(s.minutes >= 30 for s in wk.sessions if s.kind == "easy"), wk.monday

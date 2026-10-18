@@ -5,7 +5,7 @@
 # last 4-6 weeks of Garmin activities when you run `trailplan plan`.
 # weekly_hours = 5.0     # typical running hours per week right now
 # long_run_min = 120     # longest run in the last month, in minutes
-days_per_week = 5        # 3-6 running days
+days_per_week = 4        # 3-6 running days
 long_run_day = "sat"     # back-to-back runs (ultra builds) go the day after
 strength = true          # adds a trail strength session (1-2x/week)
 hr_targets = true        # false = no heart-rate zone alerts on the watch

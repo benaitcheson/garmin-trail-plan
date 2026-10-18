@@ -120,12 +120,16 @@ def cmd_plan(args) -> None:
 
     season = build_season(cfg, today, weekly, long_run)
     store = Store.load(args.state)
-    store.sessions = {k: s for k, s in store.sessions.items() if s.date < today}
+    # Today is already underway (it may have been adapted or synced), so a rebuild
+    # only replaces tomorrow onwards - unless nothing has touched today yet.
+    today_started = today.isoformat() in store.decisions or any(s.date == today for s in store.sessions.values())
+    keep_until = today if today_started else today - timedelta(days=1)
+    store.sessions = {k: s for k, s in store.sessions.items() if s.date <= keep_until}
     for s in season.sessions:
-        store.put(s)
+        if s.date > keep_until:
+            store.put(s)
     store.weeks = {wk.monday.isoformat(): {"number": wk.number, "phase": wk.label, "race": wk.race} for wk in season.weeks}
     store.notes = season.notes
-    store.decisions.pop(today.isoformat(), None)
     store.save()
 
     print(f"\nPlan built: {len(season.weeks)} weeks, {sum(1 for s in season.sessions if s.is_run)} runs.\n")

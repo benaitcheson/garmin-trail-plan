@@ -283,7 +283,11 @@ def _week_sessions(
 
 
 def _trim(sessions: list[Session], cap: float) -> list[Session]:
-    """Shrink easy running (then back-to-backs) until the week fits under cap minutes."""
+    """Shrink the week until it fits under cap minutes.
+
+    Easy runs come down to 40 min first, then the back-to-back, and only then do
+    easy runs go shorter - a 20-min midweek run next to a 3h long run is wasted.
+    """
     def total() -> int:
         return sum(s.minutes for s in sessions if s.is_run)
 
@@ -294,11 +298,14 @@ def _trim(sessions: list[Session], cap: float) -> list[Session]:
         excess = total() - cap
         # Always cut at least 5 min: durations round to 5, so a smaller cut could be a no-op.
         cut = max(5, excess)
-        if easy and easy[0].minutes > 25:
+        if easy and easy[0].minutes > 40:
             s = easy[0]
-            sessions[sessions.index(s)] = w.easy(s.date, max(20, s.minutes - cut))
+            sessions[sessions.index(s)] = w.easy(s.date, max(40, s.minutes - cut))
         elif b2b and b2b.minutes > 45:
             sessions[sessions.index(b2b)] = w.back_to_back(b2b.date, max(45, b2b.minutes - cut))
+        elif easy and easy[0].minutes > 25:
+            s = easy[0]
+            sessions[sessions.index(s)] = w.easy(s.date, max(20, s.minutes - cut))
         elif easy and sum(s.is_run for s in sessions) > 3:
             sessions.remove(easy[-1])
         elif b2b:
