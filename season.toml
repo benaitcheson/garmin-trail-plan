@@ -7,7 +7,7 @@
 # long_run_min = 120     # longest run in the last month, in minutes
 days_per_week = 4        # 3-6 running days
 long_run_day = "sun"     # back-to-back runs (ultra builds) go the day after
-strength = true          # adds a trail strength session (1-2x/week)
+strength = false         # true adds a trail strength session (1-2x/week); off - doing gym classes instead
 hr_targets = true        # false = no heart-rate zone alerts on the watch
 fuel_every_min = 30      # long runs beep "FUEL: gel + drink" this often (0 = off)
 easy_pace = "6:30"       # easy pace on flat ground (min/km) - used to estimate race durations

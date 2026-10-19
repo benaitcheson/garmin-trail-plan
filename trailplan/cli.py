@@ -132,7 +132,10 @@ def cmd_plan(args) -> None:
     # only replaces tomorrow onwards - unless nothing has touched today yet.
     today_started = today.isoformat() in store.decisions or any(s.date == today for s in store.sessions.values())
     keep_until = today if today_started else today - timedelta(days=1)
-    store.sessions = {k: s for k, s in store.sessions.items() if s.date <= keep_until}
+    store.sessions = {
+        k: s for k, s in store.sessions.items()
+        if s.date < today or (s.date <= keep_until and (cfg.athlete.strength or s.kind != "strength"))
+    }
     for s in season.sessions:
         if s.date > keep_until:
             store.put(s)
@@ -175,7 +178,8 @@ def cmd_sync(args) -> None:
     since = max(since, today - timedelta(days=14))
     acts = fetch_activities(g, min(since, today), today)
     msgs = reconcile(store, acts, since, today - timedelta(days=1))
-    trained_today = any(a.date == today and (a.is_run or a.is_strength) for a in acts)
+    # Only a run counts: a morning gym class shouldn't stop today's run being adapted.
+    trained_today = any(a.date == today and a.is_run for a in acts)
     wellness = fetch_wellness(g, today)
     msgs += adapt_today(store, today, wellness, trained_today, force=args.force)
     fitness = fetch_fitness(g)
