@@ -339,3 +339,31 @@ def test_sync_leaves_manual_race_workouts_alone(tmp_path):
                                                 "date": "2026-10-25", "name": "RACE 5k 19:55"}
     msgs = push_window(None, store, date(2026, 10, 20), Athlete(), dry_run=True)
     assert "manual:race:2026-10-25:5" in store.garmin and not any("Removing" in m for m in msgs)
+
+
+def test_missed_hard_session_moves_to_next_day_then_drops(tmp_path):
+    wed, thu, fri = MON + timedelta(days=2), MON + timedelta(days=3), MON + timedelta(days=4)
+    store = make_store(tmp_path, w.hill_sprints(wed, 30), w.easy(fri, 30), w.long_run(MON + timedelta(days=6), 60))
+    reconcile(store, [], wed, wed)
+    adapt_today(store, thu, GOOD, trained_today=False)
+    moved = store.run_on(thu)
+    assert moved.kind == "quality" and moved.adjusted == "made up from yesterday"
+    reconcile(store, [], thu, thu)  # missed again
+    msgs = adapt_today(store, fri, GOOD, trained_today=False)
+    assert store.run_on(fri).kind == "easy" and any("again" in m for m in msgs)
+
+
+def test_missed_hard_session_not_moved_before_long_run(tmp_path):
+    fri, sat, sun = MON + timedelta(days=4), MON + timedelta(days=5), MON + timedelta(days=6)
+    store = make_store(tmp_path, w.hill_repeats(fri, 2), w.long_run(sun, 120))
+    reconcile(store, [], fri, fri)
+    adapt_today(store, sat, GOOD, trained_today=False)
+    assert store.run_on(sat) is None
+
+
+def test_missed_hard_session_dropped_on_low_readiness(tmp_path):
+    wed, thu = MON + timedelta(days=2), MON + timedelta(days=3)
+    store = make_store(tmp_path, w.hill_repeats(wed, 2))
+    reconcile(store, [], wed, wed)
+    adapt_today(store, thu, LOW, trained_today=False)
+    assert store.run_on(thu) is None

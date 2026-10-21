@@ -158,7 +158,7 @@ def adapt_today(store: Store, today: date, wellness: Wellness, trained_today: bo
         return ["No readiness or sleep data for today yet - sync your watch and run this again."]
 
     msgs = [f"Today: {wellness.summary()} -> {status.upper()}."]
-    msgs += _handle_missed_long(store, today, status)
+    msgs += _handle_missed(store, today, status)
 
     run = store.run_on(today)
     if run and run.status == "planned" and run.kind != "race":
@@ -263,13 +263,22 @@ def _move(store: Store, s: Session, today: date, days_ahead: int) -> date | None
     return None
 
 
-def _handle_missed_long(store: Store, today: date, status: str) -> list[str]:
+def _handle_missed(store: Store, today: date, status: str) -> list[str]:
+    """A missed long run or hard session moves to today if it fits; missed twice, it's dropped."""
     y = store.run_on(today - timedelta(days=1))
-    if not y or y.kind != "long" or y.status != "missed" or y.adjusted.startswith("made up"):
+    if not y or y.kind not in ("long", "quality") or y.status != "missed" or y.adjusted.startswith("made up on"):
         return []
+    if y.adjusted.startswith(("made up from", "moved from")):
+        return [f"Missed {y.title} again - dropping it this week."]
     today_run = store.run_on(today)
-    if status == "poor" or (today_run and today_run.kind not in MOVABLE_ONTO | {"b2b"}) or y.phase == "race":
-        return [f"Missed yesterday's {y.title} - not making it up today."]
+    tomorrow = store.run_on(today + timedelta(days=1))
+    fits_today = today_run is None or today_run.kind in MOVABLE_ONTO | ({"b2b"} if y.kind == "long" else set())
+    # A hard session mustn't land right before the long run or another hard day.
+    fits_tomorrow = y.kind == "long" or tomorrow is None or tomorrow.kind not in ("long", "b2b", "quality", "race")
+    if y.kind == "quality" and status != "good":
+        return [f"Missed yesterday's {y.title} - readiness isn't great today, so it's dropped this week."]
+    if status == "poor" or not fits_today or not fits_tomorrow or y.phase == "race":
+        return [f"Missed yesterday's {y.title} - no room to make it up, so the week carries on."]
     if today_run:
         store.remove(today_run)
     made_up = _copy(y, today)

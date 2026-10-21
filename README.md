@@ -15,8 +15,8 @@ It builds a whole season around your races (`season.toml`), then every morning:
 | **Low** (readiness 25–49, sleep 40–59, or HRV low) | Hard session → easy run; the hard session moves to a free easy day later in the week, or is dropped. Long run –25% and all Zone 2. Back-to-back –30%. |
 | **Poor** (readiness < 25 or sleep < 40) | Long run moves to tomorrow if possible, otherwise it's halved. Anything else → 30 min recovery or rest. Strength dropped. |
 | 3 low/poor days in a row | Next 3 days lightened (hard sessions become easy, long runs –20%) |
-| Missed yesterday's long run | Moved to today if today was an easy day and you're not in poor shape |
-| Missed a hard session | Not made up; the week carries on |
+| Missed yesterday's long run | Moved to today if today is free or an easy day and you're not in poor shape |
+| Missed yesterday's hard session | Moved to today if today is free or easy, tomorrow isn't your long run or another hard day, and readiness is good. Missed again, it's dropped for the week |
 
 Once today's decision is made it's locked, so later runs that day don't change it again. Use `sync --force` to redo it.
 
